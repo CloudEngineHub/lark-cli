@@ -72,7 +72,21 @@ func ShortcutHeaderOpts(ctx context.Context) larkcore.RequestOptionFunc {
 	if h == nil {
 		return nil
 	}
-	return larkcore.WithHeaders(h)
+	return mergeHeaders(h)
+}
+
+// mergeHeaders returns a RequestOptionFunc that merges h into any existing
+// option.Header instead of replacing it. This works around the SDK's
+// WithHeaders which does a flat assignment (option.Header = header).
+func mergeHeaders(h http.Header) larkcore.RequestOptionFunc {
+	return func(option *larkcore.RequestOption) {
+		if option.Header == nil {
+			option.Header = make(http.Header)
+		}
+		for k, vs := range h {
+			option.Header[k] = vs
+		}
+	}
 }
 
 // ShortcutHeaders extracts Shortcut info from the context and returns

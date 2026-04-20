@@ -296,7 +296,7 @@ func (ctx *RuntimeContext) DoAPIStream(callCtx context.Context, req *larkcore.Ap
 
 // DoAPIJSON calls the Lark API via DoAPI, parses the JSON response envelope,
 // and returns the "data" field. Suitable for standard JSON APIs (non-file).
-func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.QueryParams, body any) (map[string]any, error) {
+func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.QueryParams, body any, opts ...larkcore.RequestOptionFunc) (map[string]any, error) {
 	req := &larkcore.ApiReq{
 		HttpMethod:  method,
 		ApiPath:     apiPath,
@@ -305,10 +305,11 @@ func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.Quer
 	if body != nil {
 		req.Body = body
 	}
-	resp, err := ctx.DoAPI(req)
+	resp, err := ctx.DoAPI(req, opts...)
 	if err != nil {
 		return nil, err
 	}
+	detail := logIDFromHeader(resp)
 	if resp.StatusCode >= 400 {
 		if len(resp.RawBody) > 0 {
 			var errEnv struct {
@@ -316,10 +317,10 @@ func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.Quer
 				Msg  string `json:"msg"`
 			}
 			if json.Unmarshal(resp.RawBody, &errEnv) == nil && errEnv.Msg != "" {
-				return nil, output.ErrAPI(errEnv.Code, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, errEnv.Msg), nil)
+				return nil, output.ErrAPI(errEnv.Code, fmt.Sprintf("HTTP %d: %s", resp.StatusCode, errEnv.Msg), detail)
 			}
 		}
-		return nil, output.ErrAPI(resp.StatusCode, fmt.Sprintf("HTTP %d", resp.StatusCode), nil)
+		return nil, output.ErrAPI(resp.StatusCode, fmt.Sprintf("HTTP %d", resp.StatusCode), detail)
 	}
 	if len(resp.RawBody) == 0 {
 		return nil, fmt.Errorf("empty response body")
@@ -333,9 +334,30 @@ func (ctx *RuntimeContext) DoAPIJSON(method, apiPath string, query larkcore.Quer
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	if envelope.Code != 0 {
-		return nil, output.ErrAPI(envelope.Code, envelope.Msg, nil)
+		return nil, output.ErrAPI(envelope.Code, envelope.Msg, detail)
+	}
+	if detail != nil {
+		if envelope.Data == nil {
+			envelope.Data = make(map[string]any)
+		}
+		for k, v := range detail {
+			envelope.Data[k] = v
+		}
 	}
 	return envelope.Data, nil
+}
+
+// logIDFromHeader extracts x-tt-logid from response headers and returns it as a detail map.
+// Returns nil if the header is absent.
+func logIDFromHeader(resp *larkcore.ApiResp) map[string]any {
+	if resp == nil {
+		return nil
+	}
+	logID := resp.Header.Get("x-tt-logid")
+	if logID == "" {
+		return nil
+	}
+	return map[string]any{"log_id": logID}
 }
 
 // ── IO access ──
