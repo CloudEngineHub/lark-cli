@@ -155,23 +155,28 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 
 ### table_delete_cols — 删除列范围
 
-删除连续的列。范围**两端都包含**。
+删除连续的列。**注意：范围是 start-inclusive、end-exclusive**（半开区间 `[col-start, col-end)`）——`--col-end` 指定的那一列**不会**被删除。要删到某列含端，`--col-end` 填它的下一列。
 
 | 参数 | 必填 | 说明 |
 |------|------|------|
 | `--col-start` | 是 | 起始列字母（含） |
-| `--col-end` | 是 | 结束列字母（含） |
+| `--col-end` | 是 | 结束列字母（**不含**）——删到 D 列含端时填 `E` |
 
 ```bash
-# 删除 A 列
+# 删除 A 列（只 A 一列）
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_delete_cols \
-  --table-block-id blkcnXXXX --col-start A --col-end A
+  --table-block-id blkcnXXXX --col-start A --col-end B
 
-# 删除 B~D 列
+# 删除 B、C 两列（D 保留）
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_delete_cols \
   --table-block-id blkcnXXXX --col-start B --col-end D
+
+# 删除 B、C、D 三列（E 保留）
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_delete_cols \
+  --table-block-id blkcnXXXX --col-start B --col-end E
 ```
 
 ### table_merge_cells — 合并单元格
@@ -205,9 +210,14 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 
 ### table_update_property — 表格/单元格属性
 
-根据是否提供 `--cell` 自动切换两种模式：
+一条指令承载两类正交的属性：
 
-#### 模式一 — 表级属性（不带 `--cell`）
+- **表级属性**（整张表）：列宽、表头行 / 列开关
+- **单元格级样式**（部分单元格）：背景色、垂直对齐 —— 支持四种互斥的定位模式
+
+两类属性可在同一次调用里组合，但**单元格级样式的四种定位模式必须选且只选一种**。没有任何属性字段时会被拒绝（避免静默 no-op）。
+
+#### 模式一 — 表级属性（不带任何单元格定位）
 
 设置列宽、表头行、表头列。
 
@@ -215,33 +225,70 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 |------|------|------|
 | `--col` | 视情况 | 设置 `--col-width` 时必填：目标列字母 |
 | `--col-width` | 否 | 列宽（px） |
-| `--header-row` | 否 | `true`/`false` — 首行是否为表头 |
-| `--header-column` | 否 | `true`/`false` — 首列是否为表头 |
+| `--header-row` | 否 | bool 开关：出现即启用首行表头；显式关闭用 `--header-row=false`；不传则不修改 |
+| `--header-column` | 否 | bool 开关：出现即启用首列表头；显式关闭用 `--header-column=false`；不传则不修改 |
 
 ```bash
 # 设置 B 列宽 300px + 启用表头行
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_update_property \
-  --table-block-id blkcnXXXX --col B --col-width 300 --header-row true
+  --table-block-id blkcnXXXX --col B --col-width 300 --header-row
+
+# 显式关闭表头列（注意 = 号，bool flag 不支持空格分隔值）
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_update_property \
+  --table-block-id blkcnXXXX --header-column=false
 ```
 
-#### 模式二 — 单元格属性（带 `--cell`）
+#### 模式二 — 单元格级样式（四种互斥的定位模式）
 
-设置单元格背景色、垂直对齐。提供 `--cell` 即进入此模式。
+给单元格、整行、整列或 A1 矩形区域设置背景色 / 垂直对齐。**恰好选一种**定位方式，再叠加 `--background-color` 或 `--vertical-align`（至少一项）。
 
-| 参数 | 必填 | 说明 |
-|------|------|------|
-| `--cell` | 是 | 目标单元格，A1 记法 |
-| `--background-color` | 至少一个 | 命名色：`light-gray`、`light-red`、`light-orange`、`light-yellow`、`light-green`、`light-blue`、`light-purple`、`medium-gray`；或 `rgb(r,g,b)` / `rgba(r,g,b,a)` |
+| 定位模式 | 参数 | 语义 |
+|---------|------|------|
+| **单格** | `--cell B3` | 单个单元格，A1 记法 |
+| **A1 矩形** | `--range A1:C3` | 矩形区域，两端都包含 |
+| **整行区间** | `--row-start N --row-end M` | 1-based 左闭右开（`--row-start 2 --row-end 5` 选中第 2、3、4 行），整行跨所有列 |
+| **整列区间** | `--col-start A --col-end C` | 列字母、**两端都包含**（`--col-start A --col-end C` 选中 A、B、C 三列），整列跨所有行 |
+
+> **列范围语义提醒：** `table_delete_cols` 的 `--col-start/--col-end` 是左闭右开（见上文），而 `table_update_property` 的 `--col-start/--col-end` 是**闭区间**，直观对齐"从 A 染到 C"。选错会多染一列或少染一列 —— 按上表确认。
+
+| 样式参数 | 必填 | 说明 |
+|---------|------|------|
+| `--background-color` | 至少一个 | 命名色：`light-gray`、`light-red`、`light-orange`、`light-yellow`、`light-green`、`light-blue`、`light-purple`、`medium-gray`；或 `rgb(r,g,b)` / `rgba(r,g,b,a)` / `#RRGGBB` |
 | `--vertical-align` | 至少一个 | `top` \| `middle` \| `bottom` |
 
 ```bash
-# 设置 B1 单元格背景色和垂直居中
+# 单格：B1 浅蓝 + 垂直居中
 lark-cli docs +update --api-version v2 --doc "<url>" \
   --command table_update_property \
   --table-block-id blkcnXXXX \
-  --cell B1 \
-  --background-color "light-blue" --vertical-align middle
+  --cell B1 --background-color light-blue --vertical-align middle
+
+# A1 矩形：把 A1:C3 九个单元格整块染成浅黄
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_update_property \
+  --table-block-id blkcnXXXX \
+  --range A1:C3 --background-color light-yellow
+
+# 整行区间：把第 2、3、4 行全部垂直居中（典型"正文行统一样式"）
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_update_property \
+  --table-block-id blkcnXXXX \
+  --row-start 2 --row-end 5 --vertical-align middle
+
+# 整列区间：把 B、C 两列染成浅灰（数据列与标签列区分）
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_update_property \
+  --table-block-id blkcnXXXX \
+  --col-start B --col-end C --background-color light-gray
+
+# 组合：一次调用同时设表头行 + 给第 1 行染浅蓝（典型"套表头样式"）
+lark-cli docs +update --api-version v2 --doc "<url>" \
+  --command table_update_property \
+  --table-block-id blkcnXXXX \
+  --header-row \
+  --row-start 1 --row-end 2 --background-color light-blue
 ```
 
 ## 返回值
@@ -347,8 +394,8 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 - **最少保留一行** — 服务端强制，删除后表格为空会被拒绝。
 - **合并区域不能部分重叠** — 目标区域必须与已有合并区域完全不交叉或完全包含。合并前用 `+fetch --detail with-ids` 核对。
 - **insert 与 delete 索引一致使用 1-based**（见[索引约定速查](#索引约定速查-)）——与 A1 记法对齐；`0` / `-1` 仅在 `--row-index` 和 `--col` 上作为哨兵。
-- **`table_update_property` 的模式由 `--cell` 自动判定** — 带 `--cell` = 单元格模式（背景色、对齐）；不带 `--cell` = 表级模式（列宽、表头行 / 列）。
-- **布尔三态** — `--header-row`、`--header-column` 不传 ≠ 传 `false`。不传表示"本次不改"，显式传 `false` 才是"关闭表头"。
+- **`table_update_property` 有两类属性** — 表级（列宽 / 表头行 / 表头列）与单元格级（背景色 / 垂直对齐）可在同一次调用里组合；单元格级样式**必须且只能**选 `--cell` / `--range` / `--row-start+--row-end` / `--col-start+--col-end` 中的一种定位方式。全空调用和多定位冲突都会被立即拒绝并返回 AI 可自纠的提示。
+- **布尔三态** — `--header-row`、`--header-column` 是 bool flag：不传 / `--header-row`（= true）/ `--header-row=false` 三种状态语义不同。不传 = "本次不改"；显式关闭必须用 `=` 连写（`--header-row=false`），**不支持空格分隔写法 `--header-row false`**，否则 `false` 会被当作位置参数。
 - **`--row-index=0` 实现注意** — CLI 层因 Go 零值被视为"未设置"透传，SDK 默认 `-1`。如需显式"插到首行之前"，推荐 `--row-index 1`。见 `cli/shortcuts/doc/docs_update_table.go:243-250`。
 - **`--revision-id` 默认 `-1`（最新）** — 需乐观并发控制时传具体版本号。
 
@@ -357,14 +404,6 @@ lark-cli docs +update --api-version v2 --doc "<url>" \
 - **先 fetch 再操作** — 每次修改前用 `+fetch --detail with-ids` 确认表格现状（行数、合并区域、block ID）。
 - **结构变更、样式变更、文字变更分三次下发** — 便于失败时定位问题、也便于回滚。
 - **别用 `table_*` 创建新表格** — 创建走 `append` / `block_insert_after` + XML；`table_*` 只管已有表格。
-
-## ⏳ 未来计划 — 未上线
-
-> 本节描述尚未发布的能力，**当前版本请勿依赖**。
-
-### Fetch A1 标注（未上线）
-
-后续迭代中，`docs +fetch` 输出可能为表格添加 A1 坐标标注，使读取路径和写入路径共用同一坐标系统。届时 `--cell B4` 将成为直接查找而非计数操作。当前版本 `+fetch` 输出不含 A1 标注，需要自行计数。
 
 ## 参考
 
