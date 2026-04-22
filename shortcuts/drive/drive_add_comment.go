@@ -16,7 +16,10 @@ import (
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
-const defaultLocateDocLimit = 10
+const (
+	defaultLocateDocLimit   = 10
+	maxCommentTextRuneCount = 10000
+)
 
 type commentDocRef struct {
 	Kind  string
@@ -551,6 +554,7 @@ func parseCommentReplyElements(raw string) ([]map[string]interface{}, error) {
 	}
 
 	replyElements := make([]map[string]interface{}, 0, len(inputs))
+	textRuneCount := 0
 	for i, input := range inputs {
 		index := i + 1
 		elementType := strings.TrimSpace(input.Type)
@@ -559,8 +563,12 @@ func parseCommentReplyElements(raw string) ([]map[string]interface{}, error) {
 			if strings.TrimSpace(input.Text) == "" {
 				return nil, output.ErrValidation("--content element #%d type=text requires non-empty text", index)
 			}
-			if utf8.RuneCountInString(input.Text) > 1000 {
-				return nil, output.ErrValidation("--content element #%d text exceeds 1000 characters", index)
+			// The OpenAPI enforces a 10000-rune limit on the rendered comment
+			// content. CLI can safely pre-check the caller-provided text runs,
+			// while mention/link expansion still remains server-side.
+			textRuneCount += utf8.RuneCountInString(input.Text)
+			if textRuneCount > maxCommentTextRuneCount {
+				return nil, output.ErrValidation("--content text across all text elements exceeds %d characters", maxCommentTextRuneCount)
 			}
 			replyElements = append(replyElements, map[string]interface{}{
 				"type": "text",

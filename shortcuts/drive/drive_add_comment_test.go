@@ -223,8 +223,32 @@ func TestParseCommentReplyElements(t *testing.T) {
 	}
 }
 
+func TestParseCommentReplyElementsAllowsTextTotalAtOpenAPILimit(t *testing.T) {
+	t.Parallel()
+
+	first := strings.Repeat("a", 6000)
+	second := strings.Repeat("b", 4000)
+
+	got, err := parseCommentReplyElements(`[{"type":"text","text":"` + first + `"},{"type":"text","text":"` + second + `"}]`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 reply elements, got %d", len(got))
+	}
+	if got[0]["text"] != first {
+		t.Fatalf("unexpected first text reply element length: got %d, want %d", len(got[0]["text"].(string)), len(first))
+	}
+	if got[1]["text"] != second {
+		t.Fatalf("unexpected second text reply element length: got %d, want %d", len(got[1]["text"].(string)), len(second))
+	}
+}
+
 func TestParseCommentReplyElementsInvalid(t *testing.T) {
 	t.Parallel()
+
+	tooLongFirst := strings.Repeat("a", 6000)
+	tooLongSecond := strings.Repeat("b", 4001)
 
 	tests := []struct {
 		name    string
@@ -250,6 +274,11 @@ func TestParseCommentReplyElementsInvalid(t *testing.T) {
 			name:    "mention missing value",
 			input:   `[{"type":"mention_user","text":""}]`,
 			wantErr: "requires text or mention_user",
+		},
+		{
+			name:    "text total exceeds open api limit",
+			input:   `[{"type":"text","text":"` + tooLongFirst + `"},{"type":"text","text":"` + tooLongSecond + `"}]`,
+			wantErr: "text across all text elements exceeds 10000 characters",
 		},
 	}
 
