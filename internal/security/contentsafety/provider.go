@@ -5,6 +5,8 @@ package contentsafety
 
 import (
 	"context"
+	"io"
+	"os"
 
 	extcs "github.com/larksuite/cli/extension/contentsafety"
 	"github.com/larksuite/cli/internal/core"
@@ -15,6 +17,7 @@ import (
 // effect immediately.
 type regexProvider struct {
 	configDir string
+	errOut    io.Writer
 }
 
 func (p *regexProvider) Name() string { return "regex" }
@@ -52,7 +55,7 @@ func (p *regexProvider) loadOrCreate() (*Config, error) {
 	if err == nil {
 		return cfg, nil
 	}
-	if errC := EnsureDefaultConfig(p.configDir); errC != nil {
+	if errC := EnsureDefaultConfig(p.configDir, p.errOut); errC != nil {
 		return nil, err
 	}
 	return LoadConfig(p.configDir)
@@ -61,5 +64,6 @@ func (p *regexProvider) loadOrCreate() (*Config, error) {
 func init() {
 	extcs.Register(&regexProvider{
 		configDir: core.GetConfigDir(),
+		errOut:    os.Stderr,
 	})
 }

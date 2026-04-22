@@ -4,8 +4,10 @@
 package contentsafety
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,7 +67,8 @@ func TestLoadConfig_EmptyRules(t *testing.T) {
 
 func TestEnsureDefaultConfig_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := EnsureDefaultConfig(dir); err != nil {
+	var buf strings.Builder
+	if err := EnsureDefaultConfig(dir, &buf); err != nil {
 		t.Fatalf("EnsureDefaultConfig() error = %v", err)
 	}
 	cfg, err := LoadConfig(dir)
@@ -78,13 +81,16 @@ func TestEnsureDefaultConfig_CreatesFile(t *testing.T) {
 	if len(cfg.Allowlist) != 1 || cfg.Allowlist[0] != "all" {
 		t.Errorf("default allowlist = %v, want [all]", cfg.Allowlist)
 	}
+	if !strings.Contains(buf.String(), "notice: created default content-safety config") {
+		t.Errorf("expected stderr notice, got %q", buf.String())
+	}
 }
 
 func TestEnsureDefaultConfig_NoOverwrite(t *testing.T) {
 	dir := t.TempDir()
 	custom := `{"allowlist":[],"rules":[]}`
 	os.WriteFile(filepath.Join(dir, "content-safety.json"), []byte(custom), 0644)
-	EnsureDefaultConfig(dir)
+	EnsureDefaultConfig(dir, io.Discard)
 	data, _ := os.ReadFile(filepath.Join(dir, "content-safety.json"))
 	if string(data) != custom {
 		t.Error("should not overwrite existing file")

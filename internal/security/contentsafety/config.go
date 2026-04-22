@@ -6,6 +6,7 @@ package contentsafety
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,7 +51,7 @@ func LoadConfig(configDir string) (*Config, error) {
 	return &Config{Allowlist: raw.Allowlist, Rules: rules}, nil
 }
 
-func EnsureDefaultConfig(configDir string) error {
+func EnsureDefaultConfig(configDir string, errOut io.Writer) error {
 	path := filepath.Join(configDir, configFileName)
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -62,7 +63,11 @@ func EnsureDefaultConfig(configDir string) error {
 	if err != nil {
 		return fmt.Errorf("marshal default config: %w", err)
 	}
-	return os.WriteFile(path, append(data, '\n'), 0644)
+	if err := os.WriteFile(path, append(data, '\n'), 0644); err != nil {
+		return err
+	}
+	fmt.Fprintf(errOut, "notice: created default content-safety config at %s\n", path)
+	return nil
 }
 
 func defaultRawConfig() rawConfig {
