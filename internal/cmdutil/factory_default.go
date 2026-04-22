@@ -21,9 +21,9 @@ import (
 	"github.com/larksuite/cli/internal/credential"
 	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/registry"
-	"github.com/larksuite/cli/internal/util"
-	_ "github.com/larksuite/cli/internal/vfs/localfileio"         // register default FileIO provider
 	_ "github.com/larksuite/cli/internal/security/contentsafety" // register content safety provider
+	"github.com/larksuite/cli/internal/util"
+	_ "github.com/larksuite/cli/internal/vfs/localfileio" // register default FileIO provider
 )
 
 // NewDefault creates a production Factory with cached closures.
