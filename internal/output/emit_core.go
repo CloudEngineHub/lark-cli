@@ -4,6 +4,7 @@
 package output
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -89,21 +90,28 @@ func runContentSafety(cobraPath string, data any, errOut io.Writer) (*extcs.Aler
 	ctx, cancel := context.WithTimeout(context.Background(), scanTimeout)
 	defer cancel()
 
+	// Give the goroutine its own writer so it cannot race on errOut after timeout.
+	// On success, we copy any provider notices to the real errOut.
+	// On timeout, the buffer is owned by the goroutine until it finishes; no shared access.
+	scanErrBuf := &bytes.Buffer{}
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				ch <- result{nil, fmt.Errorf("content safety panic: %v", r)}
 			}
 		}()
-		a, e := p.Scan(ctx, extcs.ScanRequest{Path: cmdPath, Data: data, ErrOut: errOut})
+		a, e := p.Scan(ctx, extcs.ScanRequest{Path: cmdPath, Data: data, ErrOut: scanErrBuf})
 		ch <- result{a, e}
 	}()
 
 	var res result
 	select {
 	case res = <-ch:
+		if scanErrBuf.Len() > 0 {
+			_, _ = io.Copy(errOut, scanErrBuf)
+		}
 	case <-ctx.Done():
-		return nil, nil // timeout, fail-open
+		return nil, nil // timeout, fail-open; scanErrBuf stays with the goroutine
 	}
 
 	if res.err != nil {
