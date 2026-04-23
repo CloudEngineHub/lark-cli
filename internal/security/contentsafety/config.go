@@ -58,14 +58,14 @@ func EnsureDefaultConfig(configDir string, errOut io.Writer) error {
 	if _, err := vfs.Stat(path); err == nil {
 		return nil
 	}
-	if err := vfs.MkdirAll(configDir, 0755); err != nil {
+	if err := vfs.MkdirAll(configDir, 0700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
 	data, err := json.MarshalIndent(defaultRawConfig(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal default config: %w", err)
 	}
-	if err := vfs.WriteFile(path, append(data, '\n'), fs.FileMode(0644)); err != nil {
+	if err := vfs.WriteFile(path, append(data, '\n'), fs.FileMode(0600)); err != nil {
 		return err
 	}
 	fmt.Fprintf(errOut, "notice: created default content-safety config at %s\n", path)

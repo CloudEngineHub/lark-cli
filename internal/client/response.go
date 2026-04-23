@@ -73,11 +73,7 @@ func HandleResponse(resp *larkcore.ApiResp, opts ResponseOptions) error {
 			return saveAndPrint(opts.FileIO, resp, opts.OutputPath, opts.Out)
 		}
 		if scanResult.Alert != nil {
-			if m, ok := result.(map[string]interface{}); ok {
-				m["_content_safety_alert"] = scanResult.Alert
-			} else {
-				output.WriteAlertWarning(opts.ErrOut, scanResult.Alert)
-			}
+			output.WriteAlertWarning(opts.ErrOut, scanResult.Alert)
 		}
 		if opts.JqExpr != "" {
 			return output.JqFilter(opts.Out, result, opts.JqExpr)

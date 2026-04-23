@@ -9,6 +9,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	extcs "github.com/larksuite/cli/extension/contentsafety"
 )
@@ -104,6 +105,36 @@ func TestScanForSafety_ScanError_FailOpen(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "scan error") {
 		t.Errorf("expected warning on stderr, got: %s", buf.String())
+	}
+}
+
+func TestScanForSafety_SlowProvider_Timeout_FailOpen(t *testing.T) {
+	t.Setenv("LARKSUITE_CLI_CONTENT_SAFETY_MODE", "block")
+
+	slow := &slowProvider{}
+	extcs.Register(slow)
+	defer extcs.Register(nil)
+
+	var buf bytes.Buffer
+	result := ScanForSafety("lark-cli im +test", map[string]any{}, &buf)
+	if result.Blocked {
+		t.Error("slow provider should fail-open on timeout, not block")
+	}
+	if result.Alert != nil {
+		t.Error("slow provider should return nil alert on timeout")
+	}
+}
+
+// slowProvider blocks for longer than scanTimeout to trigger the timeout path.
+type slowProvider struct{}
+
+func (s *slowProvider) Name() string { return "slow" }
+func (s *slowProvider) Scan(ctx context.Context, _ extcs.ScanRequest) (*extcs.Alert, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(200 * time.Millisecond):
+		return &extcs.Alert{Provider: "slow", MatchedRules: []string{"never"}}, nil
 	}
 }
 

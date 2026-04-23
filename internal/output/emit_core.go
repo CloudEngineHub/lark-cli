@@ -24,6 +24,9 @@ const (
 	modeBlock
 )
 
+// scanTimeout caps the content-safety scan so it cannot dominate CLI latency.
+// 100 ms is generous for a regex walk of a typical API response (KB-scale JSON);
+// larger responses hit maxDepth/maxStringBytes well before this fires.
 const scanTimeout = 100 * time.Millisecond
 
 // modeFromEnv reads LARKSUITE_CLI_CONTENT_SAFETY_MODE.
