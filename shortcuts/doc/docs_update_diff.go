@@ -65,10 +65,24 @@ func computeMarkdownDiff(before, after string) string {
 	}
 
 	var sb strings.Builder
-	// Hunk header uses 1-based line numbers matching unified-diff convention.
+	// Hunk header uses 1-based line numbers matching unified-diff
+	// convention, except that a zero-length range uses start=0 (git diff /
+	// diff -u do the same). Without this, a pure insertion into an empty
+	// "before" snapshot prints `@@ -1,0 +1,N @@` which is technically
+	// malformed.
+	beforeCount := ctxEndBefore - ctxStart
+	afterCount := ctxEndAfter - ctxStart
+	beforeStart := ctxStart + 1
+	if beforeCount == 0 {
+		beforeStart = 0
+	}
+	afterStart := ctxStart + 1
+	if afterCount == 0 {
+		afterStart = 0
+	}
 	fmt.Fprintf(&sb, "@@ -%d,%d +%d,%d @@\n",
-		ctxStart+1, ctxEndBefore-ctxStart,
-		ctxStart+1, ctxEndAfter-ctxStart,
+		beforeStart, beforeCount,
+		afterStart, afterCount,
 	)
 	for i := ctxStart; i < prefix; i++ {
 		fmt.Fprintf(&sb, " %s\n", beforeLines[i])
@@ -85,15 +99,25 @@ func computeMarkdownDiff(before, after string) string {
 	return sb.String()
 }
 
-// splitDiffLines behaves like strings.Split(s, "\n") except that the empty
-// string is mapped to a zero-length slice rather than a slice containing one
-// empty element. Without this shim an empty-vs-content diff would emit a
-// spurious blank-line deletion/addition because Split("", "\n") yields [""].
+// splitDiffLines returns the logical content lines of s for diff purposes.
+// It differs from strings.Split in two ways:
+//
+//  1. The empty input maps to a zero-length slice instead of [""], so an
+//     empty-vs-content diff doesn't emit a spurious blank-line add/remove.
+//  2. A single trailing "\n" is treated as a line terminator, not an extra
+//     blank line — so "a\nb\n" splits to ["a", "b"] rather than ["a", "b", ""].
+//     Without this, snapshots from fetch-doc (which always end with a
+//     newline) would report a phantom blank context line and inflate hunk
+//     counts.
 func splitDiffLines(s string) []string {
 	if s == "" {
 		return nil
 	}
-	return strings.Split(s, "\n")
+	lines := strings.Split(s, "\n")
+	if len(lines) > 1 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	return lines
 }
 
 // fetchMarkdownForDiff calls the fetch-doc MCP tool and extracts the

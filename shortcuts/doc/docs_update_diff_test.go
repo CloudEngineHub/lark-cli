@@ -128,6 +128,64 @@ func TestComputeMarkdownDiff(t *testing.T) {
 	}
 }
 
+func TestComputeMarkdownDiffHunkHeaderZeroLengthRange(t *testing.T) {
+	t.Parallel()
+
+	// Empty before: unified-diff convention is start=0 for a zero-length
+	// range, not start=1.
+	got := computeMarkdownDiff("", "hello\nworld")
+	if !strings.Contains(got, "@@ -0,0 ") {
+		t.Errorf("expected zero-length before range as '-0,0', got:\n%s", got)
+	}
+
+	// Empty after: symmetric case.
+	got = computeMarkdownDiff("hello\nworld", "")
+	if !strings.Contains(got, " +0,0 @@") {
+		t.Errorf("expected zero-length after range as '+0,0', got:\n%s", got)
+	}
+}
+
+func TestSplitDiffLinesStripsTrailingNewline(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string][]string{
+		"":           nil,
+		"a":          {"a"},
+		"a\n":        {"a"},
+		"a\nb":       {"a", "b"},
+		"a\nb\n":     {"a", "b"},
+		"a\n\nb\n":   {"a", "", "b"},
+		"\n":         {""}, // a single blank line should still be preserved
+		"only-blank": {"only-blank"},
+	}
+	for input, want := range cases {
+		got := splitDiffLines(input)
+		if len(got) != len(want) {
+			t.Errorf("splitDiffLines(%q) = %q, want %q", input, got, want)
+			continue
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("splitDiffLines(%q)[%d] = %q, want %q", input, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// TestComputeMarkdownDiffTrailingNewlineParity confirms a single-line
+// replacement against snapshots ending in '\n' (what fetch-doc returns)
+// produces the same diff as snapshots without the trailing newline.
+// Previously the trailing "" generated a phantom blank context line.
+func TestComputeMarkdownDiffTrailingNewlineParity(t *testing.T) {
+	t.Parallel()
+
+	withNL := computeMarkdownDiff("a\nold\nb\n", "a\nnew\nb\n")
+	withoutNL := computeMarkdownDiff("a\nold\nb", "a\nnew\nb")
+	if withNL != withoutNL {
+		t.Fatalf("diff should not depend on trailing newline\nwith:\n%s\n\nwithout:\n%s", withNL, withoutNL)
+	}
+}
+
 func TestComputeMarkdownDiffHunkHeaderLineNumbers(t *testing.T) {
 	t.Parallel()
 

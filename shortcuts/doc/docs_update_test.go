@@ -440,14 +440,14 @@ func TestDocsUpdateShowDiffSkipsForAppendMode(t *testing.T) {
 	}
 }
 
-// TestDocsUpdateShowDiffPreFetchFailureDegradesGracefully omits the
-// pre-fetch stub, so fetchMarkdownForDiff returns a "no stub" error. The
-// update must still proceed and the warning must surface on stderr.
+// TestDocsUpdateShowDiffPreFetchFailureDegradesGracefully drives the
+// pre-fetch into the paginated-snapshot advisory path by registering a
+// stub that returns has_more=true (the guard added in Case 9). The update
+// itself must still succeed and the warning must land on stderr.
 func TestDocsUpdateShowDiffPreFetchFailureDegradesGracefully(t *testing.T) {
 	f, stdout, stderr, reg := cmdutil.TestFactory(t, showDiffTestConfig())
-	// Two stubs: the failing pre-fetch chooses the first matching /mcp stub
-	// anyway, so we need a stub for it (returning has_more=true triggers the
-	// advisory error path) plus the real update call.
+	// Two stubs: the pre-fetch returns has_more=true so fetchMarkdownForDiff
+	// rejects the partial snapshot, then the real update-doc call runs.
 	registerMCPStub(reg, map[string]interface{}{"markdown": "x", "has_more": true})
 	registerMCPStub(reg, map[string]interface{}{"success": true})
 
