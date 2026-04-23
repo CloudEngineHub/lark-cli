@@ -2,7 +2,12 @@
 
 > **前置条件：** 先阅读 [`../SKILL.md`](../SKILL.md) 了解 `docs +create` / `docs +update` 的调用方式。
 
-`docs +create` / `docs +update` 底层的 `create-doc` MCP 工具**不支持部分 block 类型**。当 markdown 中出现这些块时，服务端会静默跳过或以 HTML 注释兜底，**API 返回成功但 block 不会真的写入**，是 AI Agent 经常踩坑的盲区。
+`docs +create` / `docs +update` 底层的 `create-doc` MCP 工具**不支持部分 block 类型**。具体行为分为两条路径：
+
+- **写入路径（create / update）**：markdown 中出现这些 block 时，写入阶段会被静默跳过，API 返回 `code=0 / success=true`，但 block 根本没进文档。
+- **读取路径（`docs +fetch` 导出）**：同类无法稳定序列化成 markdown 的原生 block，会以占位注释 `<!-- Unsupported block type: N -->` 呈现。
+
+两条路径都不会抛错，是 AI Agent 经常踩坑的盲区。
 
 本文档列出已知的只读 / 受限 block 类型，供 Agent 在撰写 markdown 前自检。
 
