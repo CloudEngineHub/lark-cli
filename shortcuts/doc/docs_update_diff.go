@@ -51,11 +51,6 @@ func computeMarkdownDiff(before, after string) string {
 	beforeEnd := len(beforeLines) - suffix
 	afterEnd := len(afterLines) - suffix
 
-	// Nothing changed (defensive; before == after already returned above).
-	if prefix == beforeEnd && prefix == afterEnd {
-		return ""
-	}
-
 	ctxStart := prefix - diffContextLines
 	if ctxStart < 0 {
 		ctxStart = 0
