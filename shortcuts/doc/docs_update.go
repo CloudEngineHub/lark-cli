@@ -99,7 +99,7 @@ var DocsUpdate = common.Shortcut{
 		// Static semantic checks run before the MCP call so users see
 		// warnings even if the subsequent request fails. They never block
 		// execution — the update still proceeds.
-		for _, w := range docsUpdateWarnings(mode, markdown) {
+		for _, w := range docsUpdateWarnings(mode, markdown, runtime.Str("selection-by-title")) {
 			fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
 		}
 

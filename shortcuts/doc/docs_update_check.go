@@ -34,7 +34,7 @@ import (
 //     _**text**_   *__text__*
 //     Lark stores only one of the two emphases (usually italic), silently
 //     dropping the other. The user wanted both; they will get one.
-func docsUpdateWarnings(mode, markdown string) []string {
+func docsUpdateWarnings(mode, markdown, selectionByTitle string) []string {
 	var warnings []string
 	if w := checkDocsUpdateReplaceMultilineMarkdown(mode, markdown); w != "" {
 		warnings = append(warnings, w)
@@ -42,7 +42,93 @@ func docsUpdateWarnings(mode, markdown string) []string {
 	if w := checkDocsUpdateBoldItalic(markdown); w != "" {
 		warnings = append(warnings, w)
 	}
+	if w := checkDocsUpdateReplaceHeadingBlockType(mode, markdown, selectionByTitle); w != "" {
+		warnings = append(warnings, w)
+	}
 	return warnings
+}
+
+// checkDocsUpdateReplaceHeadingBlockType flags replace_range invocations
+// whose --selection-by-title points at a heading block but whose --markdown
+// payload would not render as a heading of the same level. Lark's block
+// model stores {type, content} as independent attributes and replace_* only
+// rewrites content, so the target will keep its heading styling even though
+// the user's markdown expects a different shape. The canonical fix is
+// delete_range + insert_before, which is stated in the warning.
+//
+// The check intentionally fires only when --selection-by-title is present
+// (that's the one high-signal place where we know the target is a heading;
+// --selection-with-ellipsis and bare selection modes can target anything
+// and would produce too many false positives).
+func checkDocsUpdateReplaceHeadingBlockType(mode, markdown, selectionByTitle string) string {
+	if mode != "replace_range" {
+		return ""
+	}
+	targetLevel := atxHeadingLevel(selectionByTitle)
+	if targetLevel == 0 {
+		return ""
+	}
+	payloadLevel := firstProseHeadingLevel(markdown)
+	if payloadLevel == targetLevel {
+		return ""
+	}
+	return "--mode=replace_range does not change block type; the target heading selected by " +
+		"--selection-by-title will keep its heading level even though --markdown " +
+		"does not lead with a matching heading. " +
+		"To change block type (e.g. demote a heading to a paragraph), use --mode=delete_range " +
+		"followed by --mode=insert_before."
+}
+
+// atxHeadingLevel returns the ATX heading level (1..6) of an ATX heading
+// line such as "## Section", or 0 when the line is not an ATX heading. The
+// selection-by-title validator already requires a leading '#', so this is a
+// narrow helper; it also trims whitespace to tolerate stray indentation.
+func atxHeadingLevel(line string) int {
+	trimmed := strings.TrimSpace(line)
+	level := 0
+	for level < len(trimmed) && trimmed[level] == '#' {
+		level++
+	}
+	if level == 0 || level > 6 {
+		return 0
+	}
+	if level == len(trimmed) {
+		return 0
+	}
+	if trimmed[level] != ' ' {
+		return 0
+	}
+	return level
+}
+
+// firstProseHeadingLevel returns the ATX heading level of the first non-blank
+// prose line of markdown, skipping fenced code blocks. Returns 0 when the
+// first prose line is not an ATX heading (including setext headings, which
+// the author probably intended but which introduce enough ambiguity that we
+// treat them as "not a heading match" for this pre-flight check).
+func firstProseHeadingLevel(markdown string) int {
+	lines := strings.Split(markdown, "\n")
+	inFence := false
+	var fenceMarker string
+	for _, line := range lines {
+		if inFence {
+			if isCodeFenceClose(line, fenceMarker) {
+				inFence = false
+				fenceMarker = ""
+			}
+			continue
+		}
+		if marker := codeFenceOpenMarker(line); marker != "" {
+			inFence = true
+			fenceMarker = marker
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		return atxHeadingLevel(line)
+	}
+	return 0
 }
 
 // checkDocsUpdateReplaceMultilineMarkdown flags markdown that contains a

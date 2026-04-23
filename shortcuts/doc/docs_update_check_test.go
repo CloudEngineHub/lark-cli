@@ -358,7 +358,7 @@ func TestDocsUpdateWarningsAggregates(t *testing.T) {
 	t.Parallel()
 
 	// Both flags trigger: replace_range with blank line AND triple-asterisk.
-	warnings := docsUpdateWarnings("replace_range", "***opening***\n\nsecond paragraph")
+	warnings := docsUpdateWarnings("replace_range", "***opening***\n\nsecond paragraph", "")
 	if len(warnings) != 2 {
 		t.Fatalf("expected 2 warnings, got %d: %v", len(warnings), warnings)
 	}
@@ -368,8 +368,112 @@ func TestDocsUpdateWarningsEmpty(t *testing.T) {
 	t.Parallel()
 
 	// Clean markdown in a non-replace mode produces zero warnings.
-	warnings := docsUpdateWarnings("insert_before", "plain paragraph text")
+	warnings := docsUpdateWarnings("insert_before", "plain paragraph text", "")
 	if len(warnings) != 0 {
 		t.Fatalf("expected no warnings, got: %v", warnings)
+	}
+}
+
+func TestCheckDocsUpdateReplaceHeadingBlockType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name             string
+		mode             string
+		markdown         string
+		selectionByTitle string
+		wantWarning      bool
+	}{
+		{
+			name:             "plain replacement for H2 target warns",
+			mode:             "replace_range",
+			markdown:         "just a paragraph",
+			selectionByTitle: "## Overview",
+			wantWarning:      true,
+		},
+		{
+			name:             "mismatched heading level warns",
+			mode:             "replace_range",
+			markdown:         "### different level",
+			selectionByTitle: "## Overview",
+			wantWarning:      true,
+		},
+		{
+			name:             "matching heading level does not warn",
+			mode:             "replace_range",
+			markdown:         "## New title",
+			selectionByTitle: "## Overview",
+			wantWarning:      false,
+		},
+		{
+			name:             "non-replace_range mode does not warn",
+			mode:             "insert_before",
+			markdown:         "just a paragraph",
+			selectionByTitle: "## Overview",
+			wantWarning:      false,
+		},
+		{
+			name:             "selection without heading prefix does not warn",
+			mode:             "replace_range",
+			markdown:         "just a paragraph",
+			selectionByTitle: "",
+			wantWarning:      false,
+		},
+		{
+			name:             "leading fenced code block is skipped",
+			mode:             "replace_range",
+			markdown:         "```go\nfmt.Println(\"hi\")\n```\n## New title",
+			selectionByTitle: "## Overview",
+			wantWarning:      false,
+		},
+		{
+			name:             "leading blank lines are skipped",
+			mode:             "replace_range",
+			markdown:         "\n\n## New title",
+			selectionByTitle: "## Overview",
+			wantWarning:      false,
+		},
+		{
+			name:             "ATX hash without space is not a heading",
+			mode:             "replace_range",
+			markdown:         "##tag",
+			selectionByTitle: "## Overview",
+			wantWarning:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := checkDocsUpdateReplaceHeadingBlockType(tc.mode, tc.markdown, tc.selectionByTitle)
+			if tc.wantWarning && got == "" {
+				t.Fatalf("expected a warning, got none")
+			}
+			if !tc.wantWarning && got != "" {
+				t.Fatalf("expected no warning, got: %s", got)
+			}
+		})
+	}
+}
+
+func TestAtxHeadingLevel(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]int{
+		"# H1":          1,
+		"## H2":         2,
+		"###### H6":     6,
+		"####### x":     0, // 7 hashes is not a heading
+		"##":            0, // no content
+		"##no-space":    0,
+		"":              0,
+		"  ## indented": 2,
+		"not a heading": 0,
+	}
+	for input, want := range cases {
+		if got := atxHeadingLevel(input); got != want {
+			t.Fatalf("atxHeadingLevel(%q) = %d, want %d", input, got, want)
+		}
 	}
 }
