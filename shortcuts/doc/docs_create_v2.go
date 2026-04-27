@@ -83,4 +83,9 @@ func augmentDocsCreatePermission(runtime *common.RuntimeContext, data map[string
 	if grant := common.AutoGrantCurrentUserDrivePermission(runtime, docID, "docx"); grant != nil {
 		data["permission_grant"] = grant
 	}
+	if strings.TrimSpace(common.GetString(doc, "url")) == "" {
+		if u := common.BuildResourceURL(runtime.Config.Brand, "docx", docID); u != "" {
+			doc["url"] = u
+		}
+	}
 }

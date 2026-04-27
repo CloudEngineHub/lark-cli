@@ -146,6 +146,11 @@ var DriveUpload = common.Shortcut{
 			"file_name":  fileName,
 			"size":       fileSize,
 		}
+		if target.ParentType == driveUploadParentTypeExplorer {
+			if u := common.BuildResourceURL(runtime.Config.Brand, "file", fileToken); u != "" {
+				out["url"] = u
+			}
+		}
 		if grant := common.AutoGrantCurrentUserDrivePermission(runtime, fileToken, "file"); grant != nil {
 			out["permission_grant"] = grant
 		}

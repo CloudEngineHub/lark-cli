@@ -94,6 +94,8 @@ var DriveCreateFolder = common.Shortcut{
 		}
 		if url := common.GetString(data, "url"); url != "" {
 			out["url"] = url
+		} else if u := common.BuildResourceURL(runtime.Config.Brand, "folder", folderToken); u != "" {
+			out["url"] = u
 		}
 		if grant := common.AutoGrantCurrentUserDrivePermission(runtime, folderToken, "folder"); grant != nil {
 			out["permission_grant"] = grant

@@ -121,6 +121,10 @@ var DriveImport = common.Shortcut{
 		}
 		if status.URL != "" {
 			out["url"] = status.URL
+		} else if status.Token != "" {
+			if u := common.BuildResourceURL(runtime.Config.Brand, resultType, status.Token); u != "" {
+				out["url"] = u
+			}
 		}
 		if status.JobErrorMsg != "" {
 			out["job_error_msg"] = status.JobErrorMsg
