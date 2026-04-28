@@ -230,10 +230,10 @@ func authLoginRun(opts *LoginOptions) error {
 			fmt.Fprintf(f.IOStreams.ErrOut, "[lark-cli] [WARN] auth login: failed to cache requested scopes: %v\n", err)
 		}
 		data := map[string]interface{}{
-			"verification_url": authResp.VerificationUriComplete,
+			"verification_url": "<" + authResp.VerificationUriComplete + ">",
 			"device_code":      authResp.DeviceCode,
 			"expires_in":       authResp.ExpiresIn,
-			"hint":             fmt.Sprintf("Show verification_url to user, then immediately execute: lark-cli auth login --device-code %s (blocks until authorized or timeout). Do not instruct the user to run this command themselves.", authResp.DeviceCode),
+			"hint":             fmt.Sprintf("Show verification_url to the user verbatim — it is wrapped in <> as a markdown autolink so it renders correctly even when the URL contains underscores. Do not unwrap or modify it. Then immediately execute: lark-cli auth login --device-code %s (blocks until authorized or timeout). Do not instruct the user to run this command themselves.", authResp.DeviceCode),
 		}
 		encoder := json.NewEncoder(f.IOStreams.Out)
 		encoder.SetEscapeHTML(false)

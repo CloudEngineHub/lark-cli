@@ -904,6 +904,207 @@ func TestAuthLoginRun_JSONWriteFailure_DeviceAuthorizationReturnsWriterError(t *
 	}
 }
 
+func TestAuthLoginRun_NoWaitJSONWrapsVerificationURLAsAutolink(t *testing.T) {
+	keyring.MockInit()
+	setupLoginConfigDir(t)
+
+	f, stdout, _, reg := cmdutil.TestFactory(t, &core.CliConfig{
+		ProfileName: "default",
+		AppID:       "cli_test",
+		AppSecret:   "secret",
+		Brand:       core.BrandFeishu,
+	})
+
+	const completeURL = "https://example.com/verify?state=abc_def_ghi&scope=mail:user_mailbox:readonly"
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    larkauth.PathDeviceAuthorization,
+		Body: map[string]interface{}{
+			"device_code":               "device-code",
+			"user_code":                 "user-code",
+			"verification_uri":          "https://example.com/verify",
+			"verification_uri_complete": completeURL,
+			"expires_in":                240,
+			"interval":                  0,
+		},
+	})
+
+	err := authLoginRun(&LoginOptions{
+		Factory: f,
+		Ctx:     context.Background(),
+		Scope:   "im:message:send",
+		NoWait:  true,
+	})
+	if err != nil {
+		t.Fatalf("authLoginRun() error = %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v\nstdout: %s", err, stdout.String())
+	}
+	got, ok := payload["verification_url"].(string)
+	if !ok {
+		t.Fatalf("verification_url missing or not string: %#v", payload)
+	}
+	want := "<" + completeURL + ">"
+	if got != want {
+		t.Fatalf("verification_url = %q, want %q (--no-wait wraps URL as markdown autolink)", got, want)
+	}
+	if _, exists := payload["verification_url_markdown"]; exists {
+		t.Fatalf("verification_url_markdown should not be a separate field, got payload: %#v", payload)
+	}
+}
+
+func TestAuthLoginRun_NoWaitHintInstructsVerbatimDisplay(t *testing.T) {
+	keyring.MockInit()
+	setupLoginConfigDir(t)
+
+	f, stdout, _, reg := cmdutil.TestFactory(t, &core.CliConfig{
+		ProfileName: "default",
+		AppID:       "cli_test",
+		AppSecret:   "secret",
+		Brand:       core.BrandFeishu,
+	})
+
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    larkauth.PathDeviceAuthorization,
+		Body: map[string]interface{}{
+			"device_code":               "device-code",
+			"user_code":                 "user-code",
+			"verification_uri":          "https://example.com/verify",
+			"verification_uri_complete": "https://example.com/verify?state=a_b_c",
+			"expires_in":                240,
+			"interval":                  0,
+		},
+	})
+
+	err := authLoginRun(&LoginOptions{
+		Factory: f,
+		Ctx:     context.Background(),
+		Scope:   "im:message:send",
+		NoWait:  true,
+	})
+	if err != nil {
+		t.Fatalf("authLoginRun() error = %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal stdout: %v", err)
+	}
+	hint, _ := payload["hint"].(string)
+	for _, want := range []string{
+		"verification_url",
+		"verbatim",
+	} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint missing %q, got: %s", want, hint)
+		}
+	}
+	if strings.Contains(hint, "verification_url_markdown") {
+		t.Fatalf("hint should not reference removed field verification_url_markdown, got: %s", hint)
+	}
+}
+
+func TestAuthLoginRun_InteractiveJSONKeepsRawURL(t *testing.T) {
+	keyring.MockInit()
+	setupLoginConfigDir(t)
+
+	original := pollDeviceToken
+	t.Cleanup(func() { pollDeviceToken = original })
+	pollDeviceToken = func(_ context.Context, _ *http.Client, _, _ string, _ core.LarkBrand, _ string, _, _ int, _ io.Writer) *larkauth.DeviceFlowResult {
+		return &larkauth.DeviceFlowResult{OK: false, Message: "stub"}
+	}
+
+	f, stdout, _, reg := cmdutil.TestFactory(t, &core.CliConfig{
+		ProfileName: "default",
+		AppID:       "cli_test",
+		AppSecret:   "secret",
+		Brand:       core.BrandFeishu,
+	})
+
+	const completeURL = "https://example.com/verify?state=a_b_c&scope=mail:user_mailbox:readonly"
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    larkauth.PathDeviceAuthorization,
+		Body: map[string]interface{}{
+			"device_code":               "device-code",
+			"user_code":                 "user-code",
+			"verification_uri":          "https://example.com/verify",
+			"verification_uri_complete": completeURL,
+			"expires_in":                240,
+			"interval":                  0,
+		},
+	})
+
+	_ = authLoginRun(&LoginOptions{
+		Factory: f,
+		Ctx:     context.Background(),
+		Scope:   "im:message:send",
+		JSON:    true,
+	})
+
+	dec := json.NewDecoder(strings.NewReader(stdout.String()))
+	var first map[string]interface{}
+	if err := dec.Decode(&first); err != nil {
+		t.Fatalf("decode first JSON event: %v\nstdout: %s", err, stdout.String())
+	}
+	if first["verification_uri_complete"] != completeURL {
+		t.Fatalf("verification_uri_complete = %v, want raw URL %q", first["verification_uri_complete"], completeURL)
+	}
+	if _, exists := first["verification_uri_complete_markdown"]; exists {
+		t.Fatalf("interactive --json must not add markdown field; only --no-wait wraps URL. payload: %#v", first)
+	}
+}
+
+func TestAuthLoginRun_PlainTextStderrShowsBareURL(t *testing.T) {
+	keyring.MockInit()
+	setupLoginConfigDir(t)
+
+	original := pollDeviceToken
+	t.Cleanup(func() { pollDeviceToken = original })
+	pollDeviceToken = func(_ context.Context, _ *http.Client, _, _ string, _ core.LarkBrand, _ string, _, _ int, _ io.Writer) *larkauth.DeviceFlowResult {
+		return &larkauth.DeviceFlowResult{OK: false, Message: "stub"}
+	}
+
+	f, _, stderr, reg := cmdutil.TestFactory(t, &core.CliConfig{
+		ProfileName: "default",
+		AppID:       "cli_test",
+		AppSecret:   "secret",
+		Brand:       core.BrandFeishu,
+	})
+
+	const completeURL = "https://example.com/verify?state=a_b_c"
+	reg.Register(&httpmock.Stub{
+		Method: "POST",
+		URL:    larkauth.PathDeviceAuthorization,
+		Body: map[string]interface{}{
+			"device_code":               "device-code",
+			"user_code":                 "user-code",
+			"verification_uri":          "https://example.com/verify",
+			"verification_uri_complete": completeURL,
+			"expires_in":                240,
+			"interval":                  0,
+		},
+	})
+
+	_ = authLoginRun(&LoginOptions{
+		Factory: f,
+		Ctx:     context.Background(),
+		Scope:   "im:message:send",
+	})
+
+	got := stderr.String()
+	if !strings.Contains(got, "  "+completeURL+"\n") {
+		t.Fatalf("stderr missing bare URL line, got:\n%s", got)
+	}
+	if strings.Contains(got, "<"+completeURL+">") {
+		t.Fatalf("stderr should not contain autolink form for human users, got:\n%s", got)
+	}
+}
+
 func TestGetDomainMetadata_ExcludesEvent(t *testing.T) {
 	domains := getDomainMetadata("zh")
 	for _, dm := range domains {
