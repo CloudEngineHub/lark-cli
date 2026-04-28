@@ -1,22 +1,30 @@
 # Block type limits (read-only blocks)
 
-> **前置条件：** 先阅读 [`../SKILL.md`](../SKILL.md) 了解 `docs +create` / `docs +update` 的调用方式。
+> **前置条件：** 先阅读 [`../SKILL.md`](../SKILL.md) 了解 `docs +create` / `docs +update` 的调用方式，必要时再读 [`lark-doc-xml.md`](lark-doc-xml.md)（资源块语法的权威定义）。
 
-`docs +create` / `docs +update` 底层的 `create-doc` MCP 工具**不支持部分 block 类型**。具体行为分为两条路径：
+## 概念区分（避免误读）
 
-- **写入路径（create / update）**：markdown 中出现这些 block 时，写入阶段会被静默跳过，API 返回 `code=0 / success=true`，但 block 根本没进文档。
-- **读取路径（`docs +fetch` 导出）**：同类无法稳定序列化成 markdown 的原生 block，会以占位注释 `<!-- Unsupported block type: N -->` 呈现。
+`docs +create` / `docs +update` 并非支持全部 block 类型。**这些 block 在文档里 _可以存在_（通过 fetch 读出、通过 `block_move_after` 在文档之间搬动），但 _不能创建/更新_** —— 也就是说写入路径会静默跳过它们，不会抛错也不会出现在新文档中。两条路径行为如下：
 
-两条路径都不会抛错，是 AI Agent 经常踩坑的盲区。
+- **写入路径（`docs +create` / `docs +update --command append/overwrite/...`）**：如果输入里出现这些 block 标签，写入阶段会被静默跳过，API 返回 `code=0 / success=true`，但 block 根本没进入新文档。
+- **读取路径（`docs +fetch`）**：原文档里**已经存在**的同类 block 仍会被序列化输出（保留为对应 XML 标签或 markdown 占位）；少数飞书内部块如果无法稳定序列化成 markdown，会以 `<!-- Unsupported block type: N -->` 形式占位呈现。
+- **跨文档移动（`docs +update --command block_move_after`）**：所有 block 都支持移动，因此这些 read-only block 可以从一篇文档搬到另一篇。`block_copy_insert_after` 也可对部分类型生效，详见 [`lark-doc-xml.md`](lark-doc-xml.md) 的「四、块级复制与移动」。
 
-本文档列出已知的只读 / 受限 block 类型，供 Agent 在撰写 markdown 前自检。
+简单说：**这些 block 不是"完全只读"，只是"create / update 时无法新建"**。
 
-## 已知只读 block（API 只支持 fetch，不支持 create / update）
+## 已知不支持 create / update 的 block
 
-| 块类型 | Markdown / HTML 形式 | 现象 | 推荐做法 |
-|--------|---------------------|------|---------|
-| 引用同步块 | `<reference-synced source-block-id="..." source-document-id="...">...</reference-synced>` | 静默跳过；API 返回成功但文档中不会出现此块 | 通过 UI 手动绑定；或在 skill 中把"同步块占位"作为单独的手工步骤记录 |
-| 源同步块 | `<source-synced align="1">...</source-synced>` | 同上 | 同上 |
+权威定义见 [`lark-doc-xml.md` §三](lark-doc-xml.md)（『不可创建，仅支持移动』）。下表汇总命名、典型 XML 形式与处理建议：
+
+| 块类型 | XML 标签（snake_case）| 典型形态 | 推荐处理 |
+|---|---|---|---|
+| 引用同步块 | `<synced_reference>` | `<synced_reference src-token="DOC_TOKEN" src-block-id="BLK_ID"/>` | 写入路径无效，需通过 UI 手动绑定；fetch 读出后可用 `block_move_after` 搬到目标文档 |
+| 源同步块 | `<synced_source>` | `<synced_source>...内容...</synced_source>` | 同上 |
+| 多维表格 | `<bitable>` | `<bitable token="APP_TOKEN" table-id="TBL_ID"/>` | 在另一篇文档里嵌入已有 base 时，先 fetch 拿到 `<bitable>` 标签，再 `block_move_after` 搬过去 |
+| Base 引用 | `<base_ref>` | `<base_ref ...>` | 同上 |
+| OKR | `<okr>` | `<okr ...>` | 同上 |
+
+> **复制限制（`block_copy_insert_after`）**：上述五类（外加 `task`）都**不支持复制**；img / source / whiteboard / sheet / chat_card 才支持复制。
 
 ## 会产生 `<!-- Unsupported block type: N -->` 占位符的块
 
@@ -32,15 +40,15 @@
 
 1. `docs +create` / `docs +update` 响应 `code=0`、`success=true`，UI 上却找不到预期 block
 2. 随后 `docs +fetch` 拿回来的 markdown 里该块消失，或变成 `<!-- Unsupported block type: ... -->`
-3. round-trip diff 多出一段 `+<reference-synced ...>` / `-<reference-synced ...>`
+3. round-trip diff 多出一段 `+<synced_reference ...>` / `-<synced_reference ...>` 或类似标签
 
-出现上述任一信号时，优先怀疑 block 类型在表格中。
+出现上述任一信号时，优先怀疑 block 类型在上面表格中。
 
 ## 对 AI Agent 的影响
 
-- **周报 / 文档模板场景**：首行 `reference-synced` 团队介绍块必须通过 UI 手动补上；skill 里应显式记录"绑定同步块"是手工步骤，不要用 markdown 伪造。
-- **文档迁移 / round-trip**：跨文档迁移同步块会在源文档失权后出现占位 / 丢失，属于预期行为，不是 bug。
-- **生成式内容**：Agent 生成 markdown 时应避免主动插入 `<reference-synced>` 等标签（生成出来也写不进去）。
+- **周报 / 文档模板场景**：首行 `synced_reference` 团队介绍块必须通过 UI 手动补上；skill 里应显式记录"绑定同步块"是手工步骤，不要在 markdown 里伪造。
+- **文档迁移 / round-trip**：跨文档迁移同步块、bitable、okr 等优先用 `block_move_after`（搬不复制）；权限或环境变化导致引用断链时，需要人工修复。
+- **生成式内容**：Agent 从零生成时应避免主动插入 `<synced_reference>`、`<bitable>`、`<base_ref>`、`<okr>` 等标签（写不进去）；如果是从一篇旧文档迁内容到新文档，先 fetch 这些 block 再用 `block_move_after`。
 
 ## 相关 MCP 层记录
 
