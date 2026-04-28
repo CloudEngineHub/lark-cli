@@ -904,7 +904,7 @@ func TestAuthLoginRun_JSONWriteFailure_DeviceAuthorizationReturnsWriterError(t *
 	}
 }
 
-func TestAuthLoginRun_NoWaitJSONWrapsVerificationURLAsAutolink(t *testing.T) {
+func TestAuthLoginRun_NoWaitJSONWrapsVerificationURLAsCodedLink(t *testing.T) {
 	keyring.MockInit()
 	setupLoginConfigDir(t)
 
@@ -947,12 +947,9 @@ func TestAuthLoginRun_NoWaitJSONWrapsVerificationURLAsAutolink(t *testing.T) {
 	if !ok {
 		t.Fatalf("verification_url missing or not string: %#v", payload)
 	}
-	want := "<" + completeURL + ">"
+	want := "[`" + completeURL + "`](" + completeURL + ")"
 	if got != want {
-		t.Fatalf("verification_url = %q, want %q (--no-wait wraps URL as markdown autolink)", got, want)
-	}
-	if _, exists := payload["verification_url_markdown"]; exists {
-		t.Fatalf("verification_url_markdown should not be a separate field, got payload: %#v", payload)
+		t.Fatalf("verification_url = %q,\nwant %q\n(--no-wait wraps URL as [`URL`](URL): backticks shield text from emphasis parsing, link wrapper provides clickability)", got, want)
 	}
 }
 
@@ -998,13 +995,11 @@ func TestAuthLoginRun_NoWaitHintInstructsVerbatimDisplay(t *testing.T) {
 	for _, want := range []string{
 		"verification_url",
 		"verbatim",
+		"backtick",
 	} {
 		if !strings.Contains(hint, want) {
 			t.Fatalf("hint missing %q, got: %s", want, hint)
 		}
-	}
-	if strings.Contains(hint, "verification_url_markdown") {
-		t.Fatalf("hint should not reference removed field verification_url_markdown, got: %s", hint)
 	}
 }
 
