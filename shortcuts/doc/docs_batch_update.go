@@ -128,6 +128,21 @@ var DocsBatchUpdate = common.Shortcut{
 		successCount := 0
 
 		for i, op := range ops {
+			// Honor cancellation between ops so a user interrupt or parent
+			// timeout doesn't have to wait for the rest of the batch. Emit
+			// the partial envelope first so callers see exactly how far we
+			// got, mirroring the --on-error=stop shape.
+			if err := ctx.Err(); err != nil {
+				runtime.Out(map[string]interface{}{
+					"doc":           runtime.Str("doc"),
+					"total":         len(ops),
+					"applied":       successCount,
+					"results":       results,
+					"stopped_early": true,
+				}, nil)
+				return err
+			}
+
 			// Re-run the same static warnings the single-op shortcut emits so
 			// batch users get the same advisory signal per-op.
 			for _, w := range docsUpdateWarnings(op.Mode, op.Markdown) {
@@ -200,7 +215,12 @@ func buildBatchUpdateArgs(docID string, op batchUpdateOp) map[string]interface{}
 // with a clearer error on the two mistakes users make most often: passing a
 // single object instead of an array, or passing an empty array.
 func parseBatchUpdateOps(raw string) ([]batchUpdateOp, error) {
-	trimmed := strings.TrimSpace(raw)
+	// Strip a leading UTF-8 BOM (U+FEFF) before the prefix check.
+	// strings.TrimSpace doesn't treat BOM as whitespace, so payloads written
+	// by editors / shells that prepend a BOM (PowerShell redirection, some
+	// Windows editors) would otherwise fail the "[" prefix probe with a
+	// confusing "must be a JSON array" error.
+	trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "\ufeff"))
 	if trimmed == "" {
 		return nil, common.FlagErrorf("--operations is required")
 	}

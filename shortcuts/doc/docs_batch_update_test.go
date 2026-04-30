@@ -5,7 +5,9 @@ package doc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -105,6 +107,16 @@ func TestParseBatchUpdateOps(t *testing.T) {
 				{"mode":"delete_range","selection_with_ellipsis":"z...z"}
 			]`,
 			wantLen: 3,
+		},
+		{
+			name:    "leading UTF-8 BOM accepted",
+			input:   "\ufeff" + `[{"mode":"append","markdown":"hello"}]`,
+			wantLen: 1,
+		},
+		{
+			name:    "BOM after surrounding whitespace accepted",
+			input:   " \t\ufeff\n" + `[{"mode":"append","markdown":"hello"}]`,
+			wantLen: 1,
 		},
 	}
 	for _, tt := range tests {
@@ -513,5 +525,52 @@ func TestDocsBatchUpdateContinuesOnError(t *testing.T) {
 	}
 	if !envelope.Data.Results[2].Success || envelope.Data.Results[2].Error != "" {
 		t.Errorf("results[2] should be success with no error (continue ran op[2] after op[1] failed), got %+v", envelope.Data.Results[2])
+	}
+}
+
+// TestDocsBatchUpdateRespectsContextCancellation verifies the Execute loop
+// honors a cancelled context: with a pre-cancelled context and zero MCP
+// stubs registered, the shortcut must surface context.Canceled and emit a
+// partial envelope (applied=0, stopped_early=true) without making any MCP
+// calls. Regression for the per-iteration ctx.Err() check.
+func TestDocsBatchUpdateRespectsContextCancellation(t *testing.T) {
+	f, stdout, _, _ := cmdutil.TestFactory(t, batchUpdateTestConfig())
+
+	parent := &cobra.Command{Use: "docs"}
+	DocsBatchUpdate.Mount(parent, f)
+	parent.SetArgs([]string{
+		"+batch-update",
+		"--doc", "DOC123",
+		"--operations", `[{"mode":"append","markdown":"a"},{"mode":"append","markdown":"b"}]`,
+		"--as", "bot",
+	})
+	parent.SilenceErrors = true
+	parent.SilenceUsage = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := parent.ExecuteContext(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+
+	var envelope struct {
+		Data struct {
+			Total        int  `json:"total"`
+			Applied      int  `json:"applied"`
+			StoppedEarly bool `json:"stopped_early"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("failed to parse partial envelope: %v\nstdout:\n%s", err, stdout.String())
+	}
+	if envelope.Data.Total != 2 {
+		t.Errorf("expected total=2, got %d", envelope.Data.Total)
+	}
+	if envelope.Data.Applied != 0 {
+		t.Errorf("expected applied=0 (cancelled before any MCP call), got %d", envelope.Data.Applied)
+	}
+	if !envelope.Data.StoppedEarly {
+		t.Errorf("expected stopped_early=true on cancellation, got false")
 	}
 }
