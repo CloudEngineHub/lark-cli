@@ -537,22 +537,16 @@ func validateExplicitScopes(scope string) error {
 
 	knownScopes := knownScopesForIdentity()
 	invalid := make([]string, 0)
-	result := make([]string, 0, len(normalized))
 	seen := make(map[string]bool, len(normalized))
 
 	for _, s := range normalized {
-		if !knownScopes[s] {
-			if !seen[s] {
-				seen[s] = true
-				invalid = append(invalid, s)
-			}
-			continue
-		}
 		if seen[s] {
 			continue
 		}
 		seen[s] = true
-		result = append(result, s)
+		if !knownScopes[s] {
+			invalid = append(invalid, s)
+		}
 	}
 
 	if len(invalid) > 0 {
