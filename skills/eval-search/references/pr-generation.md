@@ -58,14 +58,27 @@ Optimizer 的产出可能横跨两个仓库：
   │
   ├─[6] 组装 PR description
   │     按本文件下方模板生成 cli 和 open 两份 description.md，互相留 link 占位
+  │     若由 /eval-search cycle 调用，description 必须包含 cloud report URL
   │
   ├─[7] gh pr create --draft（cli）
   │     cd <cli-repo> && gh pr create --draft → 记录 PR url CLI_PR_URL
+  │     若由 /eval-search cycle 调用，立刻回写 cycle.json.pr_urls 并追加云文档
   │
   └─[8] gh pr create --draft（open，若有）
         cd <open-repo> && gh pr create --draft，description 里 Pair 字段填入 CLI_PR_URL
         创建完之后回到 cli PR，用 gh pr edit 把 open PR url 填到 cli description 的 Pair 段
 ```
+
+## PR URL 交付契约
+
+`gh pr create --draft` 的返回 URL 是 `/eval-search propose-pr` 的主产物，必须持久化到：
+
+- `tests/eval-search/runs/<run-id>/pr-draft/pr-url.txt`
+- `tests/eval-search/runs/<run-id>/summary.json` 的 `pr_urls` 字段（若已有 summary）
+- `cycle.json.pr_urls`（仅 `/eval-search cycle`）
+- 云文档 final / pr-finished 段（仅 `/eval-search cycle`）
+
+最终回复用户时必须直接贴出 PR URL。若 PR 创建失败，回复中必须说明失败阶段、失败命令和当前可恢复分支，不得只说“已提交”。
 
 ## Quality gate 失败处理
 
@@ -100,6 +113,9 @@ Optimizer 的产出可能横跨两个仓库：
 - Dataset size: {{dataset_size}} (同一份 base 拉取；dataset 可能已被 PM 更新，per-case diff 以 `record_id` 对齐)
 - 评测账号: `{{user_name}}` (open_id `{{user_open_id}}`)
 - Pollution: {{contaminated_count}} case 命中 tainted tokens{{#if contaminated_count}} — 见附录{{/if}}
+{{#if cloud_report_url}}
+- Cloud report: {{cloud_report_url}}
+{{/if}}
 
 ## Wins（by case）
 

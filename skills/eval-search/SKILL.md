@@ -50,6 +50,7 @@ metadata:
 3. **阶段化执行并记录**：内部串联 `run → score/report → propose-pr`，每个阶段开始、成功、失败都先写本地 `cycle.json`，再追加到云文档
 4. **产物归档**：云文档只写阶段状态、分数摘要、finding 摘要、PR URL、失败原因和本地产物路径；不得写标准答案、完整 trajectory、source_urls 或 key_error_snippets
 5. **污染控制**：cycle 生成或使用的云文档默认是评测过程材料，必须记录为 tainted/process material；未来持久 blocklist 变更需要单独 PR，不得混入搜索效果优化 PR
+6. **完成定义**：未传 `--skip-pr` 时，最终回复必须同时给出 Cloud report URL 和 Draft PR URL；任一链接缺失都不能视为完成
 
 ## 三层架构（必须隔离，违反会让结果失真）
 

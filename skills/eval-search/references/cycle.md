@@ -64,6 +64,20 @@ tests/eval-search/runs/<run-id>/
 
 若云文档追加失败，重试一次；仍失败则停止 cycle，把失败写入 `cycle.json`，不要继续提 PR。
 
+## 完成定义（必须满足）
+
+`/eval-search cycle` 不是本地脚本跑完就结束。未传 `--skip-pr` 时，必须同时交付：
+
+- `summary.json` / `verdicts.json` 已写入本地 run 目录
+- 云文档已创建或追加成功，且文档 URL 写入 `cycle.json.cloud_doc.url`
+- 云文档 token 已写入 `cloud-doc/tainted_tokens.json`
+- draft PR 已创建，PR URL 写入 `cycle.json.pr_urls`
+- PR description 包含云文档 URL、run-id、分数摘要、污染摘要和未处理 finding
+- PR URL 已追加回云文档的 final 段
+- 最终回复用户时同时给出云文档 URL 和 PR URL
+
+任一必需链接缺失时，cycle 状态只能是 `failed` 或 `blocked`，不能回复“已完成”。
+
 ## 云文档创建 / 追加
 
 创建新文档：
@@ -168,7 +182,10 @@ setup 文档段落必须包含醒目的污染声明：
 - 主 agent 复查 PR 颗粒度和白名单
 - 质量门禁
 - regression 重跑
-- 创建 draft PR
+- 生成 PR description，并把云文档 URL 写入 description
+- 创建 draft PR，记录返回的 PR URL
+- 立刻把 PR URL 回写到 `cycle.json.pr_urls`
+- 追加 `40-pr-finished.md` 到云文档，包含 PR URL
 
 云文档记录：
 
@@ -179,6 +196,8 @@ setup 文档段落必须包含醒目的污染声明：
 - 未处理归因
 
 如果没有可提交改动，记录 `no-op`，不创建空 PR。
+
+PR 创建失败时，必须把失败原因、当前分支、commit sha、可恢复命令写入云文档；不得只在本地终端输出错误。
 
 ### 4. final
 
@@ -199,6 +218,15 @@ setup 文档段落必须包含醒目的污染声明：
 | Run ID | `<run-id>` |
 | Summary | `tests/eval-search/runs/<run-id>/summary.json` |
 | PR | `<url or none>` |
+| Report Doc | `<cloud-doc-url>` |
+```
+
+最终回复必须包含：
+
+```text
+PR: <url or none>
+Cloud report: <url>
+Run ID: <run-id>
 ```
 
 ## 污染控制
