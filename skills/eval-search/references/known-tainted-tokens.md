@@ -69,7 +69,7 @@ tainted_tokens:
 
 **不要在飞书上写"评测过程记录" / "v_n 比对分析"之类文档**。都写成本仓库 markdown：
 
-- 评测流程/设计 → `tests/eval-search/**` 或本地 run 产物
+- 评测流程/设计 → `skills/eval-search/**`（已就位）
 - 某轮迭代分析 → `tests/eval-search/runs/<run-id>/*.md`（gitignored，本地查看）
 - 发布用的 retrospective → PR description / GitHub wiki / release notes
 

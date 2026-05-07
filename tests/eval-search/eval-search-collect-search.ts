@@ -139,7 +139,7 @@ function addTokensFromValue(value, tokens) {
 }
 
 function loadTaintedTokens(root, runDir = "") {
-  const file = path.join(root, "tests/eval-search/references/known-tainted-tokens.md");
+  const file = path.join(root, "skills/eval-search/references/known-tainted-tokens.md");
   const tokens: Set<string> = new Set();
   if (!fs.existsSync(file)) {
     return tokens;

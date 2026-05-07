@@ -190,7 +190,7 @@ function summarizeFailure(result) {
 function readTaintedTokens(root) {
   const file = path.join(
     root,
-    "tests/eval-search/references/known-tainted-tokens.md",
+    "skills/eval-search/references/known-tainted-tokens.md",
   );
   const text = fs.readFileSync(file, "utf8");
   const block = text.match(/tainted_tokens:[\s\S]*?```/);
@@ -241,7 +241,7 @@ function readRunTaintedTokens(runDir) {
 function readExcludedUserIds(root) {
   const file = path.join(
     root,
-    "tests/eval-search/references/known-tainted-tokens.md",
+    "skills/eval-search/references/known-tainted-tokens.md",
   );
   const text = fs.readFileSync(file, "utf8");
   const block = text.match(/excluded_user_ids:[\s\S]*?```/);
@@ -901,7 +901,7 @@ function main() {
         ? [`preflight found tainted tokens in ${contaminationCount} case(s)`]
         : [],
     blockers: [
-      "executor and judge phases still require the eval-search agent workflow",
+      "executor and judge phases still require the agent workflow described in skills/eval-search/prompts",
     ],
   });
 
