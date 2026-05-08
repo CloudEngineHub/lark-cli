@@ -57,9 +57,17 @@ func authLogoutRun(opts *LogoutOptions) error {
 
 	for _, user := range app.Users {
 		if httpErr == nil && secretErr == nil {
-			if token := larkauth.GetStoredToken(app.AppId, user.UserOpenId); token != nil && token.AccessToken != "" {
-				if err := larkauth.RevokeToken(httpClient, app.AppId, appSecret, app.Brand, token.AccessToken, "access_token"); err != nil {
-					fmt.Fprintf(f.IOStreams.ErrOut, "Warning: failed to revoke token for %s: %v\n", user.UserOpenId, err)
+			if token := larkauth.GetStoredToken(app.AppId, user.UserOpenId); token != nil {
+				revokeToken := token.RefreshToken
+				tokenTypeHint := "refresh_token"
+				if revokeToken == "" {
+					revokeToken = token.AccessToken
+					tokenTypeHint = "access_token"
+				}
+				if revokeToken != "" {
+					if err := larkauth.RevokeToken(httpClient, app.AppId, appSecret, app.Brand, revokeToken, tokenTypeHint); err != nil {
+						fmt.Fprintf(f.IOStreams.ErrOut, "Warning: failed to revoke token for %s: %v\n", user.UserOpenId, err)
+					}
 				}
 			}
 		}
