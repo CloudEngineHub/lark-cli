@@ -2,23 +2,25 @@
 
 ## Metrics
 - Denominator: 29 leaf commands
-- Covered: 2
-- Coverage: 6.9%
+- Covered: 5
+- Coverage: 17.2%
 
 ## Summary
 - TestDrive_FilesCreateFolderWorkflow: proves `drive files create_folder` in `create_folder as bot`; helper asserts the returned folder token and registers best-effort cleanup via `drive files delete`.
 - TestDrive_StatusWorkflow: proves `drive +status` against a real Drive folder. Seeds the remote side via `drive +upload` (`unchanged.txt`, `modified.txt`, `remote-only.txt`), seeds local files with the matching/diverging contents, and asserts every output bucket (`unchanged`, `modified`, `new_local`, `new_remote`) holds exactly the expected `rel_path` and `file_token`. Cleans up uploaded files and the parent folder via best-effort cleanup hooks.
 - TestDrive_ApplyPermissionDryRun / TestDrive_ApplyPermissionDryRunRejectsFullAccess: dry-run coverage for `drive +apply-permission`; asserts URL→type inference for docx/sheet/slides, explicit `--type` overriding URL inference when both a recognized URL and `--type` are supplied, bare-token + explicit `--type` path, request method/URL/type-query/perm/remark body shape, optional `remark` omission when unset, and client-side rejection of `--perm full_access`. Runs without hitting the live API.
+- TestDriveAddCommentDryRun_MarkdownFile: dry-run coverage for `drive +add-comment` on Drive Markdown files; pins the `metas.batch_query -> files/:token/new_comments` request chain, `file_type=file`, and the required empty `anchor.block_id`.
+- TestDriveAddCommentMarkdownFileWorkflow: opt-in live workflow skeleton for the same path, gated by `LARK_DRIVE_MD_COMMENT_E2E=1` until the backend enables Markdown file comments.
 - TestDriveExportDryRun_FileNameMetadata: dry-run coverage for `drive +export`; asserts export task request shape and local `--file-name` / `--output-dir` metadata without calling live APIs.
 - Cleanup note: `drive files delete` is only exercised in cleanup and is intentionally left uncovered.
-- Blocked area: live upload, live export, comment, permission, subscription, and reply flows still need deterministic remote fixtures and filesystem setup.
+- Blocked area: live upload, live export, permission, subscription, and reply flows still need deterministic remote fixtures and filesystem setup.
 - Dry-run note: `drive_upload_dryrun_test.go::TestDriveUploadDryRun_WikiTarget` covers the wiki-target request shape for `drive +upload`, but there is still no live upload workflow coverage.
 
 ## Command Table
 
 | Status | Cmd | Type | Testcase | Key parameter shapes | Notes / uncovered reason |
 | --- | --- | --- | --- | --- | --- |
-| ✕ | drive +add-comment | shortcut |  | none | no comment workflow yet |
+| ✓ | drive +add-comment | shortcut | drive_add_comment_dryrun_test.go::TestDriveAddCommentDryRun_MarkdownFile | `--doc` file URL vs bare token + `--type file`; `.md` metadata gate; empty `anchor.block_id` | dry-run coverage in place; opt-in live workflow exists behind `LARK_DRIVE_MD_COMMENT_E2E=1` until backend support lands |
 | ✓ | drive +apply-permission | shortcut | drive_apply_permission_dryrun_test.go::TestDrive_ApplyPermissionDryRun | `--token` URL vs bare; `--type` (enum) with URL inference; `--perm view\|edit`; `--remark` optional | dry-run only; no live-apply E2E because a real request pushes a card to the owner |
 | ✕ | drive +delete | shortcut |  | none | no primary delete workflow yet |
 | ✕ | drive +download | shortcut |  | none | no file fixture workflow yet |
