@@ -279,3 +279,68 @@ func leadingRun(s string, c byte) string {
 	}
 	return s[:i]
 }
+
+// ── v2 XML content guards ──────────────────────────────────────────────────
+
+// xmlEntityRe matches a valid XML entity reference: &amp; &lt; &gt; &apos;
+// &quot; &#N; or &#xH;. Used to skip over valid references when scanning for
+// bare ampersands.
+var xmlEntityRe = regexp.MustCompile(`&(amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);`)
+
+// CheckV2XMLBareAmpersand returns a non-empty error message when content
+// contains a bare & that would cause the v2 XML parser to reject the request.
+// Only runs when --doc-format xml (the default). Callers in Validate should
+// return this as a hard error.
+//
+// Go's regexp package does not support lookahead, so we detect bare ampersands
+// by replacing all valid entity references with a placeholder and then
+// checking whether any & remains.
+func CheckV2XMLBareAmpersand(content string) string {
+	if content == "" || !strings.Contains(content, "&") {
+		return ""
+	}
+	// Replace every valid entity with its same-length placeholder so positional
+	// byte offsets are preserved (not required here, but avoids false positives).
+	stripped := xmlEntityRe.ReplaceAllString(content, "ENTITY")
+	if !strings.Contains(stripped, "&") {
+		return ""
+	}
+	return "content contains a bare & character that is not a valid XML entity reference; " +
+		"the v2 XML parser will reject the request. " +
+		"Escape it as &amp; (and < as &lt;, > as &gt; where needed)."
+}
+
+// columnIntWidthRe matches a <column … width="N" …> attribute where N is a
+// plain integer. In v2 XML the valid attribute is width-ratio (a float 0–1),
+// not width. An integer width silently has no effect on column sizing.
+var columnIntWidthRe = regexp.MustCompile(`<column\b[^>]*\bwidth="(\d+)"`)
+
+// CheckV2XMLWarnings returns a list of non-fatal warnings for v2 XML content.
+// These describe constructs that are silently dropped or ignored by the v2 API
+// but do not cause the request to fail. Callers should print these to stderr
+// before executing the API call.
+//
+// Warnings emitted:
+//
+//  1. <quote-container> is not recognised by the v2 XML parser; the block is
+//     silently dropped. Use <blockquote> instead.
+//
+//  2. <column width="N"> with an integer value has no effect in v2. The
+//     correct attribute is width-ratio="0.N" (e.g. width-ratio="0.5").
+func CheckV2XMLWarnings(content string) []string {
+	if content == "" {
+		return nil
+	}
+	var warnings []string
+	if strings.Contains(content, "<quote-container") {
+		warnings = append(warnings,
+			"<quote-container> is not supported in v2 XML and will be silently dropped; "+
+				"use <blockquote> instead.")
+	}
+	if columnIntWidthRe.MatchString(content) {
+		warnings = append(warnings,
+			"<column width=\"N\"> with an integer value has no effect in v2 XML; "+
+				"use width-ratio=\"0.5\" (float 0–1) to set column width.")
+	}
+	return warnings
+}

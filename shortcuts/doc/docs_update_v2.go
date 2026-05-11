@@ -103,6 +103,11 @@ func validateUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 			return common.FlagErrorf("--command append requires --content")
 		}
 	}
+	if runtime.Str("doc-format") != "markdown" && content != "" {
+		if msg := CheckV2XMLBareAmpersand(content); msg != "" {
+			return common.FlagErrorf("%s", msg)
+		}
+	}
 	return nil
 }
 
@@ -123,6 +128,12 @@ func executeUpdateV2(_ context.Context, runtime *common.RuntimeContext) error {
 
 	apiPath := fmt.Sprintf("/open-apis/docs_ai/v1/documents/%s", ref.Token)
 	body := buildUpdateBody(runtime)
+
+	if runtime.Str("doc-format") != "markdown" {
+		for _, w := range CheckV2XMLWarnings(runtime.Str("content")) {
+			fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
+		}
+	}
 
 	data, err := doDocAPI(runtime, "PUT", apiPath, body)
 	if err != nil {

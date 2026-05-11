@@ -373,3 +373,101 @@ func TestDocsUpdateWarningsEmpty(t *testing.T) {
 		t.Fatalf("expected no warnings, got: %v", warnings)
 	}
 }
+
+func TestCheckV2XMLBareAmpersand(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		content string
+		wantErr bool
+	}{
+		{name: "empty is fine", content: "", wantErr: false},
+		{name: "no ampersand", content: "<text>hello world</text>", wantErr: false},
+		{name: "amp entity is fine", content: "<text>a &amp; b</text>", wantErr: false},
+		{name: "lt entity is fine", content: "&lt;tag&gt;", wantErr: false},
+		{name: "gt entity is fine", content: "a &gt; b", wantErr: false},
+		{name: "apos entity is fine", content: "&apos;", wantErr: false},
+		{name: "quot entity is fine", content: "&quot;", wantErr: false},
+		{name: "decimal numeric ref is fine", content: "&#65;", wantErr: false},
+		{name: "hex numeric ref is fine", content: "&#x41;", wantErr: false},
+		{name: "bare ampersand flagged", content: "a & b", wantErr: true},
+		{name: "bare ampersand in tag flagged", content: `<text color="blue">R&D</text>`, wantErr: true},
+		{name: "unknown entity flagged", content: "&nbsp;", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := CheckV2XMLBareAmpersand(tt.content)
+			if (got != "") != tt.wantErr {
+				t.Fatalf("CheckV2XMLBareAmpersand(%q) = %q, wantErr=%v", tt.content, got, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestCheckV2XMLWarnings(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		content      string
+		wantContains []string
+		wantLen      int
+	}{
+		{name: "empty returns nil", content: "", wantLen: 0},
+		{name: "clean XML no warnings", content: "<blockquote><p>text</p></blockquote>", wantLen: 0},
+		{
+			name:         "quote-container triggers warning",
+			content:      `<quote-container><p>text</p></quote-container>`,
+			wantContains: []string{"quote-container", "blockquote"},
+			wantLen:      1,
+		},
+		{
+			name:         "column integer width triggers warning",
+			content:      `<grid><column width="50"><p>A</p></column></grid>`,
+			wantContains: []string{"width-ratio"},
+			wantLen:      1,
+		},
+		{
+			name:    "column float width-ratio is fine",
+			content: `<grid><column width-ratio="0.5"><p>A</p></column></grid>`,
+			wantLen: 0,
+		},
+		{
+			name:    "both issues produce two warnings",
+			content: `<quote-container/><grid><column width="30"/></grid>`,
+			wantLen: 2,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := CheckV2XMLWarnings(tt.content)
+			if len(got) != tt.wantLen {
+				t.Fatalf("CheckV2XMLWarnings(%q) returned %d warnings, want %d: %v", tt.content, len(got), tt.wantLen, got)
+			}
+			combined := ""
+			for _, w := range got {
+				combined += w
+			}
+			for _, sub := range tt.wantContains {
+				if !containsStr(combined, sub) {
+					t.Errorf("expected warning to contain %q, got: %s", sub, combined)
+				}
+			}
+		})
+	}
+}
+
+func containsStr(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
+		func() bool {
+			for i := 0; i+len(sub) <= len(s); i++ {
+				if s[i:i+len(sub)] == sub {
+					return true
+				}
+			}
+			return false
+		}())
+}

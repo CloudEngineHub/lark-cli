@@ -5,6 +5,7 @@ package doc
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/larksuite/cli/shortcuts/common"
@@ -27,6 +28,11 @@ func validateCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	if runtime.Str("parent-token") != "" && runtime.Str("parent-position") != "" {
 		return common.FlagErrorf("--parent-token and --parent-position are mutually exclusive")
 	}
+	if runtime.Str("doc-format") != "markdown" {
+		if msg := CheckV2XMLBareAmpersand(runtime.Str("content")); msg != "" {
+			return common.FlagErrorf("%s", msg)
+		}
+	}
 	return nil
 }
 
@@ -44,6 +50,12 @@ func dryRunCreateV2(_ context.Context, runtime *common.RuntimeContext) *common.D
 
 func executeCreateV2(_ context.Context, runtime *common.RuntimeContext) error {
 	body := buildCreateBody(runtime)
+
+	if runtime.Str("doc-format") != "markdown" {
+		for _, w := range CheckV2XMLWarnings(runtime.Str("content")) {
+			fmt.Fprintf(runtime.IO().ErrOut, "warning: %s\n", w)
+		}
+	}
 
 	data, err := doDocAPI(runtime, "POST", "/open-apis/docs_ai/v1/documents", body)
 	if err != nil {
