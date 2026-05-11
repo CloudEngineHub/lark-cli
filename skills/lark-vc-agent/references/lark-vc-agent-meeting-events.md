@@ -51,10 +51,7 @@ lark-cli vc +meeting-events --meeting-id 69xxxxxxxxxxxxx28 --dry-run
 
 ### 2. 仅支持 user 身份
 
-该命令仅支持 `user` 身份，使用前需完成 `lark-cli auth login`。
-若提示 `missing required scope(s)` / `permission_violations`，先提示用户智能体参会能力还可能受灰度资格限制，建议先加入早鸟群申请：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd；同时再按 CLI hint 引导用户执行 `lark-cli auth login --scope "vc:meeting.meetingevent:read"`。
-
-若 CLI stderr JSON 返回 `error.code=20017` / `ErrNotInGray`，说明当前用户未命中智能体参会灰度。提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd。暂不展示使用手册。
+该命令仅支持 `user` 身份。
 
 ### 3. bot 必须在会中，或在会议结束后的 5 分钟宽限窗口内曾经在会中
 
@@ -228,8 +225,6 @@ lark-cli vc +meeting-events \
 | `20001 meeting_status_MEETING_END` | 会议已结束且已超出后端允许的 5 分钟宽限窗口 | 本接口不再适合继续拉取事件。若要拿纪要文档或逐字稿 token，用 `lark-cli vc +notes --meeting-ids <meeting.id>`；若要拿 AI 产物（summary / todos / chapters）或导出逐字稿文件，先用 `lark-cli vc +recording --meeting-ids <meeting.id>` 拿 `minute_token`，再用 `lark-cli vc +notes --minute-tokens <minute_token>`；参会人请用 `vc meeting get --with-participants` |
 | `20002 meeting not exist` | `meeting_id` 错误，或会议实例当前已不可获取（常见于把 9 位会议号当 meeting_id 传） | 确认传入的是长数字 `meeting_id`，不是 9 位会议号 |
 | `HTTP 404` / `HTTP 500` | 服务端当前无法找到或处理该会议实例 | 换一个正在进行且 bot 可见的 meeting_id，或排查后端问题 |
-| `error.code=20017` / `ErrNotInGray` | 当前用户未命中智能体参会灰度 | 提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd |
-| `missing required scope(s)` / `permission_violations` | 未授权 `vc:meeting.meetingevent:read` | 先提示该能力还可能受灰度资格限制，建议加入早鸟群申请；同时再按 CLI hint 重新 `auth login --scope vc:meeting.meetingevent:read` 补 scope |
 
 ## 提示
 

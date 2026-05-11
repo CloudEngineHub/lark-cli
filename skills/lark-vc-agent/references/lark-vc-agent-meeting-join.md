@@ -36,9 +36,7 @@ lark-cli vc +meeting-join --meeting-number 123456789 --dry-run
 
 ### 1. 仅支持 user 身份
 
-该命令仅支持 `user` 身份，使用前需完成 `lark-cli auth login`。若提示 `missing required scope(s)` / `permission_violations`，先提示用户智能体参会能力还可能受灰度资格限制，建议先加入早鸟群申请：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd；同时再按 CLI hint 引导用户执行 `lark-cli auth login --scope "vc:meeting.bot.join:write"`。
-
-> **灰度提示：** 若 CLI stderr JSON 返回 `error.code=20017` / `ErrNotInGray`，说明当前用户未命中智能体参会灰度。提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd。暂不展示使用手册。
+该命令仅支持 `user` 身份。
 
 ### 2. 会议号格式严格校验
 
@@ -112,8 +110,6 @@ lark-cli vc +notes --meeting-ids <meeting.id>
 | 错误现象 | 根本原因 | 解决方案 |
 |---------|---------|---------|
 | `--meeting-number must be exactly 9 digits` | 会议号不是 9 位纯数字 | 检查是否误传了会议链接或 meeting_id |
-| `error.code=20017` / `ErrNotInGray` | 当前用户未命中智能体参会灰度 | 提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd |
-| `missing required scope(s)` / `permission_violations` | 未授权 `vc:meeting.bot.join:write` | 先提示该能力还可能受灰度资格限制，建议加入早鸟群申请；同时再按 CLI hint 运行 `auth login --scope vc:meeting.bot.join:write` 完成授权 |
 | 会议密码错误 | `--password` 错误或未提供 | 向主持人确认会议密码 |
 | 会议不存在 / 已结束 | 会议号错误或会议未进行中 | 确认会议正在进行中 |
 | `HTTP 403: no permission` / `121003` | 入会前置条件不满足，通常不是单纯 scope 问题 | 依次确认：1）会议允许智能体加入；2）会议号正确；3）如有密码，已正确传入 `--password`；4）会议已开始；5）等候室 / 入会审批已放行；6）会议未禁止当前身份加入（如限制外部、限制 bot、仅特定成员可入会）；确认后重试 |

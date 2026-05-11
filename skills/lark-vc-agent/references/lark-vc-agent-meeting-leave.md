@@ -36,10 +36,7 @@ lark-cli vc +meeting-leave --meeting-id 69xxxxxxxxxxxxx28 --dry-run
 
 ### 2. 仅支持 user 身份
 
-该命令仅支持 `user` 身份，使用前需完成 `lark-cli auth login`。只能让当前身份自己离会，无法强制移出其他参会人。
-若提示 `missing required scope(s)` / `permission_violations`，先提示用户智能体参会能力还可能受灰度资格限制，建议先加入早鸟群申请：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd；同时再按 CLI hint 引导用户执行 `lark-cli auth login --scope "vc:meeting.bot.join:write"`。
-
-若 CLI stderr JSON 返回 `error.code=20017` / `ErrNotInGray`，说明当前用户未命中智能体参会灰度。提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd。暂不展示使用手册。
+该命令仅支持 `user` 身份。只能让当前身份自己离会，无法强制移出其他参会人。
 
 ### 3. 当前身份必须在会议中
 
@@ -95,8 +92,6 @@ lark-cli vc +notes --meeting-ids <meeting.id>
 | `--meeting-id is required` | 未传入 `--meeting-id` | 传入从 `+meeting-join` 得到的 `meeting.id` |
 | `meeting not found` / `invalid meeting_id` | 误传了 9 位会议号 | 必须使用 `meeting.id`，不是会议号 |
 | `not in meeting` | 当前身份并不在该会议中 | 确认先 `+meeting-join` 成功 |
-| `error.code=20017` / `ErrNotInGray` | 当前用户未命中智能体参会灰度 | 提示用户加入早鸟群：https://go.larkoffice.com/join-chat/2f4nb0e1-fe00-4f67-bed7-25beaf533fbd |
-| `missing required scope(s)` / `permission_violations` | 未授权 `vc:meeting.bot.join:write` | 先提示该能力还可能受灰度资格限制，建议加入早鸟群申请；同时再按 CLI hint 运行 `auth login --scope vc:meeting.bot.join:write` 完成授权 |
 
 ## 提示
 
