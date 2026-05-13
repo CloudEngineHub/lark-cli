@@ -109,6 +109,35 @@ func installDenyStub(cmd *cobra.Command, path string, d policydecision.Denial) {
 	}
 	cmd.Hidden = true
 	cmd.DisableFlagParsing = true
+
+	// Bypass cobra's pre-RunE gates that would otherwise short-circuit
+	// before the wrapped RunE (= where observers + denial guard live):
+	//
+	//   1. Args validator: original commands often declare cobra.NoArgs
+	//      or a custom Args function. With DisableFlagParsing=true,
+	//      `--doc xxx` looks like positional args; cobra.ValidateArgs
+	//      fires BEFORE PersistentPreRunE / PreRunE / RunE and would
+	//      surface a Cobra usage error instead of our pruning envelope.
+	//      ArbitraryArgs accepts everything.
+	//
+	//   2. Parent's PersistentPreRunE: cobra's "first PersistentPreRunE
+	//      wins" walks UP from the leaf. cmd/auth/auth.go declares a
+	//      PersistentPreRunE that returns external_provider when env
+	//      credentials are set; without our leaf-level override, that
+	//      fires before pruning's RunE and the caller sees the wrong
+	//      envelope. We set a no-op leaf PersistentPreRunE that just
+	//      silences usage and returns nil, so dispatch proceeds to the
+	//      wrapped RunE (which produces the real pruning envelope and
+	//      lets Before/After observers fire).
+	cmd.Args = cobra.ArbitraryArgs
+	cmd.PersistentPreRunE = func(c *cobra.Command, _ []string) error {
+		c.SilenceUsage = true
+		return nil
+	}
+	cmd.PersistentPreRun = nil
+	cmd.PreRunE = nil
+	cmd.PreRun = nil
+
 	if cmd.Annotations == nil {
 		cmd.Annotations = map[string]string{}
 	}

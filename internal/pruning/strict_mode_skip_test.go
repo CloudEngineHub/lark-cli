@@ -4,6 +4,7 @@
 package pruning_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -52,6 +53,88 @@ func TestApply_PreservesStrictModeAnnotation(t *testing.T) {
 	}
 	if got := stub.Annotations[pruning.AnnotationDenialSource]; got != "strict-mode" {
 		t.Errorf("strict-mode source overwritten: got %q", got)
+	}
+}
+
+// Regression for codex H13 / C6: a denied command that carries
+// flag-like positional args (because DisableFlagParsing=true makes
+// every `--doc xxx` look positional) MUST surface the pruning
+// envelope, not a cobra usage error. Pre-fix, the original command's
+// Args validator (e.g. cobra.NoArgs from shortcut registration) would
+// fire BEFORE PersistentPreRunE / RunE and produce
+// "Error: positional arguments are not supported".
+//
+// Fix: installDenyStub sets Args=ArbitraryArgs so cobra's validate
+// step always passes, letting dispatch reach the wrapped RunE.
+func TestApply_DenyStubBypassesArgsValidator(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	leaf := &cobra.Command{
+		Use:  "+update",
+		Args: cobra.NoArgs, // shortcut style: refuse all positional args
+		RunE: func(*cobra.Command, []string) error { return nil },
+	}
+	root.AddCommand(leaf)
+
+	denied := map[string]policydecision.Denial{
+		"+update": {
+			Layer:        policydecision.LayerPruning,
+			PolicySource: "yaml",
+			ReasonCode:   "command_denylisted",
+			Reason:       "denied by user yaml",
+		},
+	}
+	pruning.Apply(root, denied)
+
+	if leaf.Args == nil {
+		t.Fatal("denied command must have non-nil Args validator after Apply")
+	}
+	// ArbitraryArgs returns nil for every input -> Args validation no-ops.
+	if err := leaf.Args(leaf, []string{"--doc", "xxx", "--mode", "append"}); err != nil {
+		t.Errorf("denied command Args validator should accept any input, got %v", err)
+	}
+}
+
+// Regression for codex C11 / C13: a denied command whose PARENT
+// declares a PersistentPreRunE (e.g. cmd/auth/auth.go's
+// external_provider check) MUST surface the pruning envelope, not
+// the parent's error. Cobra's "first PersistentPreRunE walking up
+// from leaf wins" semantics will pick the parent's PersistentPreRunE
+// unless the denied leaf carries its own.
+//
+// Fix: installDenyStub installs a no-op PersistentPreRunE on the leaf
+// so cobra stops there and proceeds to the wrapped RunE (which holds
+// the real pruning envelope).
+func TestApply_DenyStubBypassesParentPersistentPreRunE(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	parent := &cobra.Command{
+		Use: "auth",
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			return errors.New("parent PersistentPreRunE fired (would mask pruning)")
+		},
+	}
+	root.AddCommand(parent)
+	leaf := &cobra.Command{
+		Use:  "login",
+		RunE: func(*cobra.Command, []string) error { return nil },
+	}
+	parent.AddCommand(leaf)
+
+	denied := map[string]policydecision.Denial{
+		"auth/login": {
+			Layer:        policydecision.LayerPruning,
+			PolicySource: "yaml",
+			ReasonCode:   "identity_mismatch",
+			Reason:       "denied",
+		},
+	}
+	pruning.Apply(root, denied)
+
+	if leaf.PersistentPreRunE == nil {
+		t.Fatal("denied command must have leaf-level PersistentPreRunE")
+	}
+	// Our PersistentPreRunE must NOT propagate the parent's error.
+	if err := leaf.PersistentPreRunE(leaf, nil); err != nil {
+		t.Errorf("denied command leaf PersistentPreRunE should be no-op, got %v", err)
 	}
 }
 

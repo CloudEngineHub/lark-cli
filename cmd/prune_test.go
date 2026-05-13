@@ -201,6 +201,50 @@ func TestPruneForStrictMode_User_DirectBotShortcutReturnsStrictMode(t *testing.T
 	}
 }
 
+// Regression for codex C13: a strict-mode stub whose PARENT declares
+// a PersistentPreRunE (e.g. cmd/auth/auth.go's external_provider
+// check on env credentials) must surface the strict_mode envelope,
+// not the parent's error. Cobra's "first PersistentPreRunE wins
+// walking up from leaf" semantics will pick the parent's unless the
+// stub itself carries its own.
+//
+// Fix: strictModeStubFrom installs a no-op PersistentPreRunE so cobra
+// stops at the stub and proceeds to its RunE.
+func TestStrictModeStub_BypassesParentPersistentPreRunE(t *testing.T) {
+	root := newTestTree()
+	pruneForStrictMode(root, core.StrictModeBot)
+	stub := findCmd(root, "auth", "login")
+	if stub == nil {
+		t.Fatal("auth/login stub should exist after StrictModeBot")
+	}
+	if stub.PersistentPreRunE == nil {
+		t.Fatal("strict-mode stub must declare PersistentPreRunE on leaf")
+	}
+	if err := stub.PersistentPreRunE(stub, nil); err != nil {
+		t.Errorf("strict-mode stub PersistentPreRunE should be no-op, got %v", err)
+	}
+}
+
+// Regression for codex H13: strict-mode stub must accept arbitrary
+// positional args. With DisableFlagParsing=true, a user passing
+// `auth login --scope ...` looks like 4 positional args; the original
+// cobra.Args validator would surface a usage error BEFORE strict-mode
+// stub's RunE.
+func TestStrictModeStub_BypassesArgsValidator(t *testing.T) {
+	root := newTestTree()
+	pruneForStrictMode(root, core.StrictModeBot)
+	stub := findCmd(root, "auth", "login")
+	if stub == nil {
+		t.Fatal("auth/login stub should exist after StrictModeBot")
+	}
+	if stub.Args == nil {
+		t.Fatal("strict-mode stub must declare Args validator")
+	}
+	if err := stub.Args(stub, []string{"--scope", "im.message", "--profile", "default"}); err != nil {
+		t.Errorf("strict-mode stub Args should accept flag-like args, got %v", err)
+	}
+}
+
 // strictModeStubFrom must write the denial annotations so the hook
 // layer's populateInvocationDenial recognises the command as denied
 // and physically isolates the Wrap chain. Without this, a plugin

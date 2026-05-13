@@ -51,14 +51,32 @@ func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Comma
 	// stub RunE directly). Without these, a plugin Wrapper registered
 	// against platform.All() could intercept and silently swallow the
 	// strict-mode error -- breaking strict-mode's "hard boundary" contract.
+	//
+	// Args + PersistentPreRunE overrides mirror pruning/apply.go::installDenyStub:
+	//
+	//   - Args=ArbitraryArgs: with DisableFlagParsing the user's flags
+	//     look like positional args; the original child's Args validator
+	//     (e.g. cobra.NoArgs) would fire BEFORE RunE and produce a
+	//     cobra usage error instead of our strict_mode envelope.
+	//
+	//   - PersistentPreRunE no-op: cmd/auth/auth.go declares a parent
+	//     PersistentPreRunE that returns external_provider when env
+	//     credentials are set. Cobra's "first wins walking up" would
+	//     pick auth's instead of our denial. A leaf-level no-op makes
+	//     cobra stop here and proceed to the wrapped RunE.
 	return &cobra.Command{
 		Use:                child.Use,
 		Aliases:            append([]string(nil), child.Aliases...),
 		Hidden:             true,
 		DisableFlagParsing: true,
+		Args:               cobra.ArbitraryArgs,
 		Annotations: map[string]string{
 			pruning.AnnotationDenialLayer:  policydecision.LayerStrictMode,
 			pruning.AnnotationDenialSource: "strict-mode",
+		},
+		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
+			c.SilenceUsage = true
+			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return output.ErrWithHint(output.ExitValidation, "strict_mode",
