@@ -20,7 +20,9 @@ import (
 	_ "github.com/larksuite/cli/events"
 	"github.com/larksuite/cli/internal/build"
 	"github.com/larksuite/cli/internal/cmdutil"
+	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/keychain"
+	"github.com/larksuite/cli/internal/pruning"
 	"github.com/larksuite/cli/shortcuts"
 	"github.com/spf13/cobra"
 )
@@ -60,17 +62,22 @@ func HideProfile(hide bool) BuildOption {
 }
 
 // Build constructs the full command tree without executing.
-// Returns only the cobra.Command; Factory is internal.
+// Returns only the cobra.Command; Factory and hook Registry are internal.
 // Use Execute for the standard production entry point.
 func Build(ctx context.Context, inv cmdutil.InvocationContext, opts ...BuildOption) *cobra.Command {
-	_, rootCmd := buildInternal(ctx, inv, opts...)
+	_, rootCmd, _ := buildInternal(ctx, inv, opts...)
 	return rootCmd
 }
 
 // buildInternal is a pure assembly function: it wires the command tree from
 // inv and BuildOptions alone. Any state-dependent decision (disk, network,
 // env) belongs in the caller and must be threaded in via BuildOption.
-func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...BuildOption) (*cmdutil.Factory, *cobra.Command) {
+//
+// Returns (factory, rootCmd, registry). The registry is nil when plugin
+// install failed (FailClosed guard installed) or when no plugin produced
+// hooks; callers that wire Shutdown emit must nil-check before calling
+// hook.Emit.
+func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...BuildOption) (*cmdutil.Factory, *cobra.Command, *hook.Registry) {
 	// cfg.globals.Profile is left zero here; it's bound to the --profile
 	// flag in RegisterGlobalFlags and filled by cobra's parse step.
 	cfg := &buildConfig{}
@@ -129,5 +136,63 @@ func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...B
 		pruneForStrictMode(rootCmd, mode)
 	}
 
-	return f, rootCmd
+	// Run the platform host: install registered plugins, collecting
+	// their Restrict() contributions and their hooks. FailClosed
+	// failures (and untrusted-config failures like restricts_mismatch)
+	// are abort-worthy: InstallAll returns an error in those cases.
+	// We honour that by installing a PersistentPreRunE that emits
+	// the structured envelope at command-dispatch time -- buildInternal
+	// itself cannot return an error without breaking its assembly
+	// contract, but cobra runs PersistentPreRunE before any RunE so
+	// the user sees the error on their very next invocation.
+	installResult, installErr := installPluginsAndHooks(cfg.streams.ErrOut)
+	if installErr != nil {
+		installPluginInstallErrorGuard(rootCmd, installErr)
+		// Stop wiring more state from a failed install -- the rest of
+		// the function would only matter if the CLI is allowed to
+		// proceed normally, which it isn't.
+		return f, rootCmd, nil
+	}
+	var pluginRules []pruning.PluginRule
+	var registry *hook.Registry
+	if installResult != nil {
+		pluginRules = installResult.PluginRules
+		registry = installResult.Registry
+	}
+
+	// Apply user-layer command pruning: yaml + Plugin.Restrict.
+	//
+	// **Error policy splits by source**:
+	//   - Plugin path (any pluginRules contributed): a validation or
+	//     conflict error is a HARD failure -- the plugin author asked
+	//     for a security policy, silently dropping it would leave the
+	//     CLI more permissive than intended. Abort via the conflict
+	//     guard so every command surfaces the structured envelope.
+	//   - yaml-only path: stays fail-OPEN with a warning. A user typo
+	//     in policy.yml must not lock them out of every command.
+	if err := applyUserPolicyPruning(rootCmd, pluginRules); err != nil {
+		if len(pluginRules) > 0 {
+			installPluginConflictGuard(rootCmd, err)
+			return f, rootCmd, nil
+		}
+		warnPolicyError(cfg.streams.ErrOut, err)
+	}
+
+	// Install hooks onto the (now-pruned) command tree and emit the
+	// Startup lifecycle event so Plugin.On(Startup) handlers can run.
+	//
+	// Startup handler error or panic is a HARD failure: a plugin's
+	// Startup logic is part of its install contract, and silently
+	// continuing would mean the plugin's invariants do not hold while
+	// the rest of its hooks (Wrap / Observe) still fire. Install the
+	// plugin_lifecycle guard and short-circuit so every subsequent
+	// dispatch surfaces the envelope.
+	if registry != nil {
+		if err := wireHooks(ctx, rootCmd, registry); err != nil {
+			installPluginLifecycleErrorGuard(rootCmd, err)
+			return f, rootCmd, nil
+		}
+	}
+
+	return f, rootCmd, registry
 }

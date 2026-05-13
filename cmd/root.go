@@ -14,10 +14,12 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/larksuite/cli/extension/platform"
 	internalauth "github.com/larksuite/cli/internal/auth"
 	"github.com/larksuite/cli/internal/build"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/internal/skillscheck"
@@ -88,8 +90,9 @@ func Execute() int {
 	}
 	configureFlagCompletions(os.Args)
 
-	f, rootCmd := buildInternal(
-		context.Background(), inv,
+	ctx := context.Background()
+	f, rootCmd, reg := buildInternal(
+		ctx, inv,
 		WithIO(os.Stdin, os.Stdout, os.Stderr),
 		HideProfile(isSingleAppMode()),
 	)
@@ -99,8 +102,18 @@ func Execute() int {
 		setupNotices()
 	}
 
-	if err := rootCmd.Execute(); err != nil {
-		return handleRootError(f, err)
+	runErr := rootCmd.Execute()
+
+	// Fire Shutdown lifecycle hooks regardless of run outcome.
+	// emitShutdown imposes a 2s total deadline and never propagates handler
+	// errors (Emit's documented Shutdown contract), so it cannot block exit
+	// or alter the user-visible exit code.
+	if reg != nil && !isCompletionCommand(os.Args) {
+		_ = hook.Emit(ctx, reg, platform.Shutdown, runErr)
+	}
+
+	if runErr != nil {
+		return handleRootError(f, runErr)
 	}
 	return 0
 }
@@ -157,11 +170,17 @@ func setupNotices() {
 }
 
 // isCompletionCommand returns true if args indicate a shell completion request.
-// Update notifications must be suppressed for these to avoid corrupting
-// machine-parseable completion output.
+// Update notifications and Shutdown lifecycle emits must be suppressed for
+// these to avoid corrupting machine-parseable completion output and to avoid
+// firing plugin Shutdown handlers on every Tab keystroke.
+//
+// Cobra dispatches BOTH "__complete" and its alias "__completeNoDesc" through
+// the same hidden subcommand (see cobra/completions.go ShellCompRequestCmd /
+// ShellCompNoDescRequestCmd). Check both, otherwise bash/zsh completion
+// (which often uses NoDesc) silently bypasses the gate.
 func isCompletionCommand(args []string) bool {
 	for _, arg := range args {
-		if arg == "completion" || arg == "__complete" {
+		if arg == "completion" || arg == "__complete" || arg == "__completeNoDesc" {
 			return true
 		}
 	}

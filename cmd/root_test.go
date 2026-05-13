@@ -330,6 +330,7 @@ func TestConfigureFlagCompletions(t *testing.T) {
 		{"help flag", []string{"im", "--help"}, true},
 		{"no args", []string{}, true},
 		{"__complete request", []string{"__complete", "im", "+send", ""}, false},
+		{"__completeNoDesc request", []string{"__completeNoDesc", "im", "+send", ""}, false},
 		{"completion subcommand", []string{"completion", "bash"}, false},
 	}
 	for _, tc := range tests {
@@ -338,6 +339,33 @@ func TestConfigureFlagCompletions(t *testing.T) {
 			configureFlagCompletions(tc.args)
 			if got := !cmdutil.FlagCompletionsEnabled(); got != tc.wantDisabled {
 				t.Fatalf("FlagCompletionsEnabled() = %v, want disabled=%v", !got, tc.wantDisabled)
+			}
+		})
+	}
+}
+
+// isCompletionCommand must classify BOTH cobra completion aliases as
+// completion requests so the Shutdown emit and update-notice paths skip
+// shell-completion invocations. __completeNoDesc is an Alias of
+// __complete (cobra/completions.go ShellCompNoDescRequestCmd) and
+// dispatches the same RunE; bash/zsh completion typically calls the
+// NoDesc variant.
+func TestIsCompletionCommand(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"plain command", []string{"im", "+send"}, false},
+		{"__complete", []string{"__complete", "im"}, true},
+		{"__completeNoDesc", []string{"__completeNoDesc", "im"}, true},
+		{"completion subcommand", []string{"completion", "bash"}, true},
+		{"completion in tail", []string{"foo", "bar", "completion"}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isCompletionCommand(tc.args); got != tc.want {
+				t.Fatalf("isCompletionCommand(%v) = %v, want %v", tc.args, got, tc.want)
 			}
 		})
 	}

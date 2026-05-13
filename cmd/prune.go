@@ -10,6 +10,8 @@ import (
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/output"
+	"github.com/larksuite/cli/internal/policydecision"
+	"github.com/larksuite/cli/internal/pruning"
 	"github.com/spf13/cobra"
 )
 
@@ -43,11 +45,21 @@ func pruneIncompatible(parent *cobra.Command, mode core.StrictMode) {
 }
 
 func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Command {
+	// The denial annotations let the hook layer's populateInvocationDenial
+	// recognise this command as denied, so the Wrap chain is physically
+	// isolated (wrapRunE takes the DeniedByPolicy branch and calls the
+	// stub RunE directly). Without these, a plugin Wrapper registered
+	// against platform.All() could intercept and silently swallow the
+	// strict-mode error -- breaking strict-mode's "hard boundary" contract.
 	return &cobra.Command{
 		Use:                child.Use,
 		Aliases:            append([]string(nil), child.Aliases...),
 		Hidden:             true,
 		DisableFlagParsing: true,
+		Annotations: map[string]string{
+			pruning.AnnotationDenialLayer:  policydecision.LayerStrictMode,
+			pruning.AnnotationDenialSource: "strict-mode",
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return output.ErrWithHint(output.ExitValidation, "strict_mode",
 				fmt.Sprintf("strict mode is %q, only %s-identity commands are available", mode, mode.ForcedIdentity()),

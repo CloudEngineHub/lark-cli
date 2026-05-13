@@ -9,6 +9,8 @@ import (
 
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/policydecision"
+	"github.com/larksuite/cli/internal/pruning"
 	"github.com/spf13/cobra"
 )
 
@@ -196,5 +198,30 @@ func TestPruneForStrictMode_User_DirectBotShortcutReturnsStrictMode(t *testing.T
 	}
 	if !strings.Contains(err.Error(), `strict mode is "user"`) {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// strictModeStubFrom must write the denial annotations so the hook
+// layer's populateInvocationDenial recognises the command as denied
+// and physically isolates the Wrap chain. Without this, a plugin
+// Wrapper registered against platform.All() could intercept the stub
+// and silently return nil, swallowing the strict-mode error.
+func TestStrictModeStub_HasDenialAnnotation(t *testing.T) {
+	root := newTestTree()
+	pruneForStrictMode(root, core.StrictModeBot)
+
+	// im/+search is user-only -> replaced by a stub in StrictModeBot.
+	stub := findCmd(root, "im", "+search")
+	if stub == nil {
+		t.Fatalf("expected im/+search stub to exist")
+	}
+	got := stub.Annotations[pruning.AnnotationDenialLayer]
+	if got != policydecision.LayerStrictMode {
+		t.Errorf("stub annotation %q = %q, want %q",
+			pruning.AnnotationDenialLayer, got, policydecision.LayerStrictMode)
+	}
+	if src := stub.Annotations[pruning.AnnotationDenialSource]; src != "strict-mode" {
+		t.Errorf("stub annotation %q = %q, want %q",
+			pruning.AnnotationDenialSource, src, "strict-mode")
 	}
 }
