@@ -178,7 +178,7 @@ lark-cli slides xml_presentation.slide create --as user \
 | 400 | XML 格式错误 | 检查 `slide.content` 是否是完整 `<slide>` 元素 |
 | 400 | 请求体结构错误 | 检查是否按 `slide.content` 和 `before_slide_id` 包装 |
 | 403 | 权限不足 | 检查是否拥有 `slides:presentation:update` 或 `slides:presentation:write_only` scope |
-| 3350001 | XML 非 well-formed 或服务端参数校验失败 | 优先检查未转义字符：文本 `Q&A -> Q&amp;A`，文本 `<` / `>` 写成 `&lt;` / `&gt;`，属性 URL `a=1&b=2 -> a=1&amp;b=2`；完整 PPT 创建前可运行 `python3 skills/lark-slides-creator/scripts/layout_lint.py --input <file>` 获取行列和上下文 |
+| 3350001 | XML 非 well-formed 或服务端参数校验失败 | 优先检查未转义字符：文本 `Q&A -> Q&amp;A`，文本 `<` / `>` 写成 `&lt;` / `&gt;`，属性 URL `a=1&b=2 -> a=1&amp;b=2`；再检查标签闭合、命名空间、`<content>` 结构和请求体包装 |
 
 ## 注意事项
 
@@ -188,7 +188,7 @@ lark-cli slides xml_presentation.slide create --as user \
 4. **fill / border 写法**: 颜色填充使用 `<fill><fillColor color="..."/></fill>`，边框常用 `<border color="..." width="2"/>`
 5. **插入位置**: 通过 `before_slide_id` 指定插入目标，而不是用 `position`
 6. **JSON 转义**: 如果直接内联 XML，需要正确转义双引号
-7. **本地预检**: 完整 PPT 创建前可运行 `skills/lark-slides-creator/scripts/layout_lint.py --input <file>`；它检查 XML well-formed 和布局风险，不等价于完整 XSD schema 校验
+7. **执行层预检**: 检查 XML well-formed、特殊字符转义、`slide.content` 包装和 `before_slide_id` 位置；布局质量检查不属于本执行层
 8. **建议**: 先使用 `xml_presentations.get` 获取现有结构，再添加新页面
 
 ## 批量添加建议

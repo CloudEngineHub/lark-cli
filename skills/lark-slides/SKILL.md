@@ -125,15 +125,9 @@ Local paths must be safe paths under the current working directory. The upload l
 - Gradient fills require `rgba()` stops with percentages, for example `linear-gradient(135deg,rgba(15,23,42,1) 0%,rgba(56,97,140,1) 100%)`.
 - For `xml_presentation.slide.replace`, `block_replace` needs the target block id and text shapes need `<content/>`; `+replace-slide` injects the required wrapper details.
 
-## Lint And Validation
+## Validation
 
-This execution skill relies on XML well-formedness, `lark-cli schema`, and the protocol references above. For full-deck creation or visual layout quality checks, the creator skill owns the optional layout lint tool:
-
-```bash
-python3 skills/lark-slides-creator/scripts/layout_lint.py --input /tmp/presentation.xml
-```
-
-The lint checks XML well-formedness and layout risks such as overlap, bounds, footer collision, and text-height pressure. It is not a full XSD validator. Treat `error` as blocking; review `warning` before executing API calls.
+This execution skill validates at the XML/API layer. Before execution, check XML well-formedness, escaping, request body shape, and `lark-cli schema` output. Visual layout quality checks belong to creator workflows, not this execution layer.
 
 ## Troubleshooting
 
