@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/larksuite/cli/internal/cmdmeta"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/output"
@@ -95,6 +96,37 @@ func TestRegisterShortcutsMountsBaseCommands(t *testing.T) {
 	}
 	if workspaceCmd == nil || workspaceCmd.Name() != "+base-get" {
 		t.Fatalf("base workspace shortcut not mounted: %#v", workspaceCmd)
+	}
+}
+
+// Service-level cobra commands created by RegisterShortcuts must carry
+// the cmdmeta.Domain annotation so plugin Selectors (platform.ByDomain)
+// and Rule.Allow path-globs can resolve a command's business domain.
+// The annotation is set on the parent; cmdmeta.Domain walks up the
+// parent chain so every leaf shortcut inherits without extra tagging.
+func TestRegisterShortcutsTagsServiceDomain(t *testing.T) {
+	program := &cobra.Command{Use: "root"}
+	RegisterShortcuts(program, newRegisterTestFactory(t))
+
+	for _, svc := range []string{"im", "docs", "drive", "calendar", "base"} {
+		group, _, err := program.Find([]string{svc})
+		if err != nil || group == nil {
+			t.Errorf("service %q not mounted", svc)
+			continue
+		}
+		if got := cmdmeta.Domain(group); got != svc {
+			t.Errorf("service %q domain = %q, want %q", svc, got, svc)
+		}
+	}
+
+	// Inheritance: a leaf shortcut under a service must also resolve
+	// to the parent's domain via cmdmeta.Domain's parent-chain walk.
+	leaf, _, err := program.Find([]string{"im", "+messages-send"})
+	if err != nil || leaf == nil {
+		t.Fatalf("expected im/+messages-send to be mounted")
+	}
+	if got := cmdmeta.Domain(leaf); got != "im" {
+		t.Errorf("leaf domain via parent inheritance = %q, want %q", got, "im")
 	}
 }
 

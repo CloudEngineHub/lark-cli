@@ -9,6 +9,7 @@ import (
 	"github.com/larksuite/cli/shortcuts/okr"
 	"github.com/spf13/cobra"
 
+	"github.com/larksuite/cli/internal/cmdmeta"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/shortcuts/base"
@@ -92,6 +93,18 @@ func RegisterShortcutsWithContext(ctx context.Context, program *cobra.Command, f
 			}
 			program.AddCommand(svc)
 		}
+		// Tag the service group with its domain so platform.ByDomain
+		// and Rule.Allow path-globs work without each leaf shortcut
+		// having to declare the domain itself: cmdmeta.Domain walks up
+		// the parent chain and stops at the first annotated ancestor
+		// (this command).
+		//
+		// Done OUTSIDE the create branch so the tag is still applied
+		// when the service command was pre-created by cmd/service
+		// (OpenAPI auto-registration adds im, drive, calendar, etc.
+		// before shortcuts run). Without this, only pure-shortcut
+		// services like `docs` would get tagged.
+		cmdmeta.SetDomain(svc, service)
 		if service == "docs" {
 			doc.ConfigureServiceHelp(svc)
 		}
