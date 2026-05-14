@@ -32,6 +32,7 @@ func NewCmdConfig(f *cmdutil.Factory) *cobra.Command {
 	cmd.AddCommand(NewCmdConfigDefaultAs(f))
 	cmd.AddCommand(NewCmdConfigStrictMode(f))
 	cmd.AddCommand(NewCmdConfigPolicy(f))
+	cmd.AddCommand(NewCmdConfigPlugins(f))
 	return cmd
 }
 

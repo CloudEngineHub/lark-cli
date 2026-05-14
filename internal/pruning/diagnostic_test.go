@@ -78,7 +78,9 @@ func TestIsDiagnosticPath(t *testing.T) {
 	}{
 		{"config/policy/show", true},
 		{"config/policy/validate", true},
-		{"config/policy", false}, // parent group itself is not exempt
+		{"config/plugins/show", true},
+		{"config/policy", false},  // parent group itself is not exempt
+		{"config/plugins", false}, // parent group itself is not exempt
 		{"docs/+fetch", false},
 		{"", false},
 	}

@@ -13,12 +13,25 @@ import (
 	"github.com/larksuite/cli/internal/pruning"
 )
 
+// PluginInfo is the metadata of a successfully-installed plugin,
+// captured at install time so diagnostic commands (config plugins show)
+// can enumerate plugins without re-calling potentially panic-prone
+// plugin methods at display time.
+type PluginInfo struct {
+	Name         string
+	Version      string
+	Capabilities platform.Capabilities
+}
+
 // InstallResult is the output of InstallAll. Registry is ready for
 // hook.Install; PluginRules feeds into pruning.Resolve as the
-// "plugin contribution" half of the resolver input.
+// "plugin contribution" half of the resolver input. Plugins lists
+// every plugin that committed successfully (FailOpen-skipped plugins
+// are absent), for downstream diagnostics.
 type InstallResult struct {
 	Registry    *hook.Registry
 	PluginRules []pruning.PluginRule
+	Plugins     []PluginInfo
 }
 
 // InstallAll runs every registered plugin through the staging
@@ -178,7 +191,28 @@ func installOne(name string, p platform.Plugin, result *InstallResult) error {
 			Rule:       staging.rule,
 		})
 	}
+
+	// Record the plugin in the inventory. Version is fetched here under
+	// a recover-wrapped helper so a plugin's Version() panic does not
+	// abort the install we just committed.
+	result.Plugins = append(result.Plugins, PluginInfo{
+		Name:         name,
+		Version:      safeCallVersion(p),
+		Capabilities: caps,
+	})
 	return nil
+}
+
+// safeCallVersion mirrors safeCallName but for Plugin.Version. Failures
+// degrade to the empty string -- Version is informational, not a hard
+// contract field, so we never want it to abort installation.
+func safeCallVersion(p platform.Plugin) (v string) {
+	defer func() {
+		if r := recover(); r != nil {
+			v = ""
+		}
+	}()
+	return p.Version()
 }
 
 // readFailurePolicy reads Capabilities and returns the policy, falling

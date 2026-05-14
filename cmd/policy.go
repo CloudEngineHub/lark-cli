@@ -16,6 +16,7 @@ import (
 	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/platformhost"
+	"github.com/larksuite/cli/internal/plugininventory"
 	"github.com/larksuite/cli/internal/pruning"
 	"github.com/larksuite/cli/internal/vfs"
 )
@@ -82,6 +83,40 @@ func installPluginsAndHooks(errOut io.Writer) (*platformhost.InstallResult, erro
 		return &platformhost.InstallResult{Registry: nil}, nil
 	}
 	return platformhost.InstallAll(plugins, errOut)
+}
+
+// recordInventory builds and stores the plugin inventory snapshot for
+// diagnostic commands (config plugins show) to read at runtime. Called
+// once from build.go after applyUserPolicyPruning + wireHooks succeed.
+func recordInventory(installResult *platformhost.InstallResult) {
+	if installResult == nil {
+		plugininventory.SetActive(nil)
+		return
+	}
+	pluginSrcs := make([]plugininventory.PluginSource, 0, len(installResult.Plugins))
+	for _, p := range installResult.Plugins {
+		pluginSrcs = append(pluginSrcs, plugininventory.PluginSource{
+			Name:         p.Name,
+			Version:      p.Version,
+			Capabilities: p.Capabilities,
+		})
+	}
+	ruleSrcs := make([]plugininventory.RuleSource, 0, len(installResult.PluginRules))
+	for _, r := range installResult.PluginRules {
+		if r.Rule == nil {
+			continue
+		}
+		ruleSrcs = append(ruleSrcs, plugininventory.RuleSource{
+			PluginName: r.PluginName,
+			Allow:      r.Rule.Allow,
+			Deny:       r.Rule.Deny,
+			MaxRisk:    r.Rule.MaxRisk,
+			Identities: r.Rule.Identities,
+			RuleName:   r.Rule.Name,
+			Desc:       r.Rule.Description,
+		})
+	}
+	plugininventory.SetActive(plugininventory.Build(pluginSrcs, installResult.Registry, ruleSrcs))
 }
 
 // wireHooks installs Observer/Wrapper hooks onto every runnable command
@@ -261,11 +296,11 @@ func installPluginLifecycleErrorGuard(rootCmd *cobra.Command, err error) {
 // walkGuard recurses through cmd's subtree and installs the guard at
 // EVERY level cobra might dispatch to. The cobra execution order is:
 //
-//	1. PersistentPreRunE (looked up from leaf, walking up; "first wins")
-//	2. PreRunE
-//	3. RunE
-//	4. PostRunE
-//	5. PersistentPostRunE
+//  1. PersistentPreRunE (looked up from leaf, walking up; "first wins")
+//  2. PreRunE
+//  3. RunE
+//  4. PostRunE
+//  5. PersistentPostRunE
 //
 // A subcommand that declares its own PersistentPreRunE (cmd/auth and
 // cmd/config both do) would not only shadow root's PersistentPreRunE

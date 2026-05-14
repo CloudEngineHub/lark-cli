@@ -19,6 +19,7 @@ package pruning
 var diagnosticPaths = map[string]bool{
 	"config/policy/show":     true,
 	"config/policy/validate": true,
+	"config/plugins/show":    true,
 }
 
 // IsDiagnosticPath reports whether the given canonical command path is

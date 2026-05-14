@@ -51,6 +51,36 @@ type Registry struct {
 // NewRegistry returns an empty Registry.
 func NewRegistry() *Registry { return &Registry{} }
 
+// Observers returns a snapshot of all registered observers. Order is
+// registration order. Diagnostic commands (config plugins show) call
+// this to enumerate every hook attached to the binary.
+func (r *Registry) Observers() []ObserverEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]ObserverEntry, len(r.observers))
+	copy(out, r.observers)
+	return out
+}
+
+// Wrappers returns a snapshot of all registered wrappers. Order is
+// registration order (outermost first).
+func (r *Registry) Wrappers() []WrapperEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]WrapperEntry, len(r.wrappers))
+	copy(out, r.wrappers)
+	return out
+}
+
+// Lifecycles returns a snapshot of all registered lifecycle handlers.
+func (r *Registry) Lifecycles() []LifecycleEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]LifecycleEntry, len(r.lifecycles))
+	copy(out, r.lifecycles)
+	return out
+}
+
 // AddObserver registers an Observer. Caller is responsible for namespacing
 // (the platformhost does this). Nil fn is silently skipped -- the staging
 // Registrar should reject invalid registrations before this layer.

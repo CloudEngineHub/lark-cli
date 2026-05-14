@@ -194,5 +194,10 @@ func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...B
 		}
 	}
 
+	// Snapshot the plugin inventory so `config plugins show` can answer
+	// "what plugins / hooks / rules are currently in effect" without
+	// re-calling plugin methods at display time.
+	recordInventory(installResult)
+
 	return f, rootCmd, registry
 }
