@@ -80,6 +80,10 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 	r := e.rule
 	path := CanonicalPath(cmd)
 
+	if IsDiagnosticPath(path) {
+		return Decision{Allowed: true}
+	}
+
 	// Axis 1: Deny has priority.
 	if matchesAny(r.Deny, path) {
 		return Decision{
