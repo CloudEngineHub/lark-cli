@@ -27,7 +27,10 @@ func validateCommandInvocation(root *cobra.Command, args []string) error {
 	// flags). Leave those on the normal Execute path so this preflight only
 	// replaces silent parent-help fallbacks with structured validation errors.
 	cmd, remaining, err := root.Traverse(args)
-	if err != nil || cmd == nil || len(remaining) == 0 {
+	if err != nil {
+		return nil //nolint:nilerr // defer to RootCmd.Execute* for normal Cobra errors
+	}
+	if cmd == nil || len(remaining) == 0 {
 		return nil
 	}
 	unknown := remaining[0]
