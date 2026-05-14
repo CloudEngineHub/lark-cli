@@ -43,6 +43,33 @@ func TestMarkdownCreateDryRun_Content(t *testing.T) {
 	assert.Contains(t, output, `"size": 7`)
 }
 
+func TestMarkdownCreateDryRun_WikiTarget(t *testing.T) {
+	setMarkdownDryRunConfigEnv(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	result, err := clie2e.RunCmd(ctx, clie2e.Request{
+		Args: []string{
+			"markdown", "+create",
+			"--name", "README.md",
+			"--content", "# hello",
+			"--wiki-token", "wikcnMarkdownDryRun",
+			"--dry-run",
+		},
+		DefaultAs: "bot",
+	})
+	require.NoError(t, err)
+	result.AssertExitCode(t, 0)
+
+	output := strings.TrimSpace(result.Stdout)
+	assert.Contains(t, output, "/open-apis/drive/v1/files/upload_all")
+	assert.Contains(t, output, `"file_name": "README.md"`)
+	assert.Contains(t, output, `"parent_node": "wikcnMarkdownDryRun"`)
+	assert.Contains(t, output, `"parent_type": "wiki"`)
+	assert.Contains(t, output, `"size": 7`)
+}
+
 func TestMarkdownCreateDryRun_FileShowsConcreteSize(t *testing.T) {
 	setMarkdownDryRunConfigEnv(t)
 
@@ -94,6 +121,27 @@ func TestMarkdownCreateDryRun_RejectsEmptyContent(t *testing.T) {
 	}
 	errMsg := gjson.Get(result.Stdout, "error").String()
 	assert.Contains(t, errMsg, "empty markdown content is not supported")
+}
+
+func TestMarkdownCreateDryRun_RejectsEmptyWikiToken(t *testing.T) {
+	setMarkdownDryRunConfigEnv(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	t.Cleanup(cancel)
+
+	result, err := clie2e.RunCmd(ctx, clie2e.Request{
+		Args: []string{
+			"markdown", "+create",
+			"--name", "README.md",
+			"--content", "# hello",
+			"--wiki-token", "",
+			"--dry-run",
+		},
+		DefaultAs: "bot",
+	})
+	require.NoError(t, err)
+	result.AssertExitCode(t, 2)
+	assert.Contains(t, result.Stderr, "--wiki-token cannot be empty")
 }
 
 func TestMarkdownFetchDryRun_OutputFile(t *testing.T) {
