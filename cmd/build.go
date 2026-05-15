@@ -131,6 +131,8 @@ func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...B
 	service.RegisterServiceCommandsWithContext(ctx, rootCmd, f)
 	shortcuts.RegisterShortcutsWithContext(ctx, rootCmd, f)
 
+	installUnknownSubcommandGuard(rootCmd)
+
 	// Prune commands incompatible with strict mode.
 	if mode := f.ResolveStrictMode(ctx); mode.IsActive() {
 		pruneForStrictMode(rootCmd, mode)

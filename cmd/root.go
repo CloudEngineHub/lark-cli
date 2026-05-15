@@ -12,7 +12,9 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/larksuite/cli/extension/platform"
 	internalauth "github.com/larksuite/cli/internal/auth"
@@ -280,6 +282,59 @@ func writeSecurityPolicyError(w io.Writer, spErr *internalauth.SecurityPolicyErr
 		return
 	}
 	fmt.Fprint(w, buffer.String())
+}
+
+// installUnknownSubcommandGuard replaces cobra's silent help fallback on
+// group commands (no Run/RunE) with an unknown_subcommand error.
+func installUnknownSubcommandGuard(cmd *cobra.Command) {
+	if cmd.HasSubCommands() && cmd.Run == nil && cmd.RunE == nil {
+		cmd.RunE = unknownSubcommandRunE
+	}
+	for _, c := range cmd.Commands() {
+		installUnknownSubcommandGuard(c)
+	}
+}
+
+func unknownSubcommandRunE(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return cmd.Help()
+	}
+	unknown := args[0]
+	available := availableSubcommandNames(cmd)
+	msg := fmt.Sprintf("unknown subcommand %q for %q", unknown, cmd.CommandPath())
+	hint := fmt.Sprintf("run `%s --help` to see available subcommands", cmd.CommandPath())
+	if len(available) > 0 {
+		hint = fmt.Sprintf("available subcommands: %s", strings.Join(available, ", "))
+	}
+	return &output.ExitError{
+		Code: output.ExitValidation,
+		Detail: &output.ErrDetail{
+			Type:    "unknown_subcommand",
+			Message: msg,
+			Hint:    hint,
+			Detail: map[string]any{
+				"unknown":      unknown,
+				"command_path": cmd.CommandPath(),
+				"available":    available,
+			},
+		},
+	}
+}
+
+func availableSubcommandNames(cmd *cobra.Command) []string {
+	subs := make([]string, 0, len(cmd.Commands()))
+	for _, c := range cmd.Commands() {
+		if c.Hidden || !c.IsAvailableCommand() {
+			continue
+		}
+		name := c.Name()
+		if name == "help" || name == "completion" {
+			continue
+		}
+		subs = append(subs, name)
+	}
+	sort.Strings(subs)
+	return subs
 }
 
 // installTipsHelpFunc wraps the default help function to append a TIPS section
