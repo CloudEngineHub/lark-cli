@@ -20,5 +20,15 @@ func Shortcuts() []common.Shortcut {
 		SheetHide,
 		SheetUnhide,
 		SheetSetTabColor,
+
+		// lark_sheet_sheet_structure
+		SheetInfo,
+		DimInsert,
+		DimDelete,
+		DimHide,
+		DimUnhide,
+		DimFreeze,
+		DimGroup,
+		DimUngroup,
 	}
 }
