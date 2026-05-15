@@ -5,67 +5,12 @@ package sheets
 
 import "github.com/larksuite/cli/shortcuts/common"
 
-// Shortcuts returns all sheets shortcuts.
+// Shortcuts returns all lark-sheets shortcuts. The list is grouped by
+// canonical skill to mirror the sheet-skill-spec layout
+// (lark_sheet_workbook → lark_sheet_float_image).
 func Shortcuts() []common.Shortcut {
 	return []common.Shortcut{
-		// Spreadsheet management
-		SheetCreate,
-		SheetInfo,
-		SheetExport,
-
-		// Sheet management
-		SheetCreateSheet,
-		SheetCopySheet,
-		SheetDeleteSheet,
-		SheetUpdateSheet,
-
-		// Cell data
-		SheetRead,
-		SheetWrite,
-		SheetAppend,
-		SheetFind,
-		SheetReplace,
-
-		// Cell style and merge
-		SheetSetStyle,
-		SheetBatchSetStyle,
-		SheetMergeCells,
-		SheetUnmergeCells,
-
-		// Cell images
-		SheetWriteImage,
-
-		// Row/column management
-		SheetAddDimension,
-		SheetInsertDimension,
-		SheetUpdateDimension,
-		SheetMoveDimension,
-		SheetDeleteDimension,
-
-		// Filter views
-		SheetCreateFilterView,
-		SheetUpdateFilterView,
-		SheetListFilterViews,
-		SheetGetFilterView,
-		SheetDeleteFilterView,
-		SheetCreateFilterViewCondition,
-		SheetUpdateFilterViewCondition,
-		SheetListFilterViewConditions,
-		SheetGetFilterViewCondition,
-		SheetDeleteFilterViewCondition,
-
-		// Dropdown
-		SheetSetDropdown,
-		SheetUpdateDropdown,
-		SheetGetDropdown,
-		SheetDeleteDropdown,
-
-		// Float images
-		SheetMediaUpload,
-		SheetCreateFloatImage,
-		SheetUpdateFloatImage,
-		SheetGetFloatImage,
-		SheetListFloatImages,
-		SheetDeleteFloatImage,
+		// lark_sheet_workbook
+		WorkbookInfo,
 	}
 }
