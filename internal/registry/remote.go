@@ -255,11 +255,18 @@ func doSyncFetch() {
 
 // --- background refresh ---
 
-var refreshOnce sync.Once
+var (
+	refreshOnce       sync.Once
+	bgRefreshInFlight sync.WaitGroup // tracks doBackgroundRefresh goroutines for test teardown (resetInit)
+)
 
 func triggerBackgroundRefresh() {
 	refreshOnce.Do(func() {
-		go doBackgroundRefresh()
+		bgRefreshInFlight.Add(1)
+		go func() {
+			defer bgRefreshInFlight.Done()
+			doBackgroundRefresh()
+		}()
 	})
 }
 

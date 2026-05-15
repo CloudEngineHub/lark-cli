@@ -612,6 +612,9 @@ func TestSetupNotices_Drift(t *testing.T) {
 	if msg, _ := skills["message"].(string); msg != want {
 		t.Errorf("notice.skills.message = %q, want %q", msg, want)
 	}
+	if cmd, _ := skills["command"].(string); cmd != "lark-cli update" {
+		t.Errorf("notice.skills.command = %q, want %q", cmd, "lark-cli update")
+	}
 }
 
 // TestSetupNotices_BothUpdateAndSkills verifies the composed envelope
@@ -657,6 +660,20 @@ func TestSetupNotices_BothUpdateAndSkills(t *testing.T) {
 	}
 	if _, ok := notice["skills"].(map[string]interface{}); !ok {
 		t.Errorf("missing 'skills' key: %+v", notice)
+	}
+	upd, ok := notice["update"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("notice.update missing or wrong type: %+v", notice)
+	}
+	if cmd, _ := upd["command"].(string); cmd != "lark-cli update" {
+		t.Errorf("notice.update.command = %q, want %q", cmd, "lark-cli update")
+	}
+	sk, ok := notice["skills"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("notice.skills missing or wrong type: %+v", notice)
+	}
+	if cmd, _ := sk["command"].(string); cmd != "lark-cli update" {
+		t.Errorf("notice.skills.command = %q, want %q", cmd, "lark-cli update")
 	}
 }
 

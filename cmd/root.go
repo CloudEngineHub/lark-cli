@@ -153,6 +153,7 @@ func setupNotices() {
 				"current": info.Current,
 				"latest":  info.Latest,
 				"message": info.Message(),
+				"command": "lark-cli update",
 			}
 		}
 		if stale := skillscheck.GetPending(); stale != nil {
@@ -160,6 +161,7 @@ func setupNotices() {
 				"current": stale.Current,
 				"target":  stale.Target,
 				"message": stale.Message(),
+				"command": "lark-cli update",
 			}
 		}
 		if len(notice) == 0 {

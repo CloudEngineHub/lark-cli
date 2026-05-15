@@ -17,6 +17,13 @@ import (
 	"github.com/larksuite/cli/internal/vfs"
 )
 
+// execLookPath is the LookPath implementation used by VerifyBinary.
+// It defaults to the standard library exec.LookPath but is swapped in tests
+// via lookPathMock to provide controlled binary resolution.
+//
+// Tests that mutate execLookPath must not call t.Parallel().
+var execLookPath = exec.LookPath
+
 // InstallMethod describes how the CLI was installed.
 type InstallMethod int
 
@@ -186,13 +193,13 @@ func (u *Updater) VerifyBinary(expectedVersion string) error {
 	if u.VerifyOverride != nil {
 		return u.VerifyOverride(expectedVersion)
 	}
-	// Prefer the current executable path (what the user actually launched).
-	// Use Executable() directly without EvalSymlinks — after npm install the
-	// symlink target may have changed, but the path itself is still valid for
-	// execution. Fall back to LookPath only if Executable() fails entirely.
-	exe, err := vfs.Executable()
+	// Prefer PATH resolution so npm global bin symlinks pick up the newly
+	// installed binary (#836). If `lark-cli` is not on PATH (e.g. the user
+	// invoked this process by absolute path), fall back to the running
+	// executable — same as the pre-#836 secondary resolution path.
+	exe, err := execLookPath("lark-cli")
 	if err != nil {
-		exe, err = exec.LookPath("lark-cli")
+		exe, err = vfs.Executable()
 		if err != nil {
 			return fmt.Errorf("cannot locate binary: %w", err)
 		}
