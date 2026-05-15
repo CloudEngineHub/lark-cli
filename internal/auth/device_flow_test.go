@@ -176,6 +176,9 @@ func TestLogAuthError_RecordsStructuredEntry(t *testing.T) {
 	if !strings.Contains(got, "error=\"keychain Set error: net/http: use last response\"") {
 		t.Fatalf("expected quoted error in log, got %q", got)
 	}
+	if !strings.Contains(got, "parent=") {
+		t.Fatalf("expected parent in log, got %q", got)
+	}
 	if !strings.Contains(got, "cmdline=lark-cli auth login ...") {
 		t.Fatalf("expected truncated cmdline in log, got %q", got)
 	}

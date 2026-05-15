@@ -4,10 +4,13 @@
 package keychain
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +99,67 @@ func FormatAuthCmdline(args []string) string {
 	return strings.Join(args[:3], " ") + " ..."
 }
 
+func getParentProcessName() string {
+	ppid := os.Getppid()
+
+	switch runtime.GOOS {
+	case "windows":
+		return getParentProcessNameWindows(ppid)
+	case "darwin":
+		return getParentProcessNameDarwin(ppid)
+	case "linux":
+		return getParentProcessNameLinux(ppid)
+	default:
+		return fmt.Sprintf("ppid=%d", ppid)
+	}
+}
+
+func getParentProcessNameLinux(ppid int) string {
+	exePath := fmt.Sprintf("/proc/%d/exe", ppid)
+	if targetPath, err := os.Readlink(exePath); err == nil {
+		return filepath.Base(targetPath)
+	}
+
+	commPath := fmt.Sprintf("/proc/%d/comm", ppid)
+	if data, err := os.ReadFile(commPath); err == nil {
+		return strings.TrimSpace(string(data))
+	}
+
+	return fmt.Sprintf("ppid=%d", ppid)
+}
+
+func getParentProcessNameDarwin(ppid int) string {
+	exePath := fmt.Sprintf("/proc/%d/exe", ppid)
+	if targetPath, err := os.Readlink(exePath); err == nil {
+		return filepath.Base(targetPath)
+	}
+
+	cmd := exec.Command("ps", "-p", fmt.Sprintf("%d", ppid), "-o", "comm=")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err == nil {
+		return strings.TrimSpace(out.String())
+	}
+
+	return fmt.Sprintf("ppid=%d", ppid)
+}
+
+func getParentProcessNameWindows(ppid int) string {
+	cmd := exec.Command("wmic", "process", "where", fmt.Sprintf("processid=%d", ppid), "get", "name", "/value")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err == nil {
+		lines := strings.Split(out.String(), "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "Name=") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "Name="))
+			}
+		}
+	}
+
+	return fmt.Sprintf("ppid=%d", ppid)
+}
+
 func LogAuthResponse(path string, status int, logID string) {
 	initAuthLogger()
 	if authResponseLogger == nil {
@@ -103,11 +167,12 @@ func LogAuthResponse(path string, status int, logID string) {
 	}
 
 	authResponseLogger.Printf(
-		"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s cmdline=%s",
+		"[lark-cli] auth-response: time=%s path=%s status=%d x-tt-logid=%s parent=%s cmdline=%s",
 		authResponseLogNow().Format(time.RFC3339Nano),
 		path,
 		status,
 		logID,
+		getParentProcessName(),
 		FormatAuthCmdline(authResponseLogArgs()),
 	)
 }
@@ -123,11 +188,12 @@ func LogAuthError(component, op string, err error) {
 	}
 
 	authResponseLogger.Printf(
-		"[lark-cli] auth-error: time=%s component=%s op=%s error=%q cmdline=%s",
+		"[lark-cli] auth-error: time=%s component=%s op=%s error=%q parent=%s cmdline=%s",
 		authResponseLogNow().Format(time.RFC3339Nano),
 		component,
 		op,
 		err.Error(),
+		getParentProcessName(),
 		FormatAuthCmdline(authResponseLogArgs()),
 	)
 }
