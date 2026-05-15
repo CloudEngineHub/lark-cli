@@ -65,3 +65,56 @@ func publicTokenFlags() []common.Flag {
 		{Name: "spreadsheet-token", Desc: "spreadsheet token (XOR --url)"},
 	}
 }
+
+// publicSheetFlags extends publicTokenFlags with the sheet selector pair.
+// Use for any +sheet-* / +cells-* / +dim-* / object shortcut that operates
+// on an existing single sub-sheet.
+func publicSheetFlags() []common.Flag {
+	return append(publicTokenFlags(),
+		common.Flag{Name: "sheet-id", Desc: "sheet reference_id (XOR --sheet-name)"},
+		common.Flag{Name: "sheet-name", Desc: "sheet title (XOR --sheet-id)"},
+	)
+}
+
+// resolveSheetSelector validates the --sheet-id / --sheet-name XOR and
+// returns whichever was supplied. Network-free.
+//
+// Returned tuple: (sheetID, sheetName). Exactly one is non-empty — callers
+// pass both through to the tool input; the server picks whichever fits.
+func resolveSheetSelector(runtime *common.RuntimeContext) (sheetID, sheetName string, err error) {
+	if err := common.ExactlyOne(runtime, "sheet-id", "sheet-name"); err != nil {
+		return "", "", err
+	}
+	if id := strings.TrimSpace(runtime.Str("sheet-id")); id != "" {
+		if err := validate.RejectControlChars(id, "sheet-id"); err != nil {
+			return "", "", common.FlagErrorf("%v", err)
+		}
+		return id, "", nil
+	}
+	name := strings.TrimSpace(runtime.Str("sheet-name"))
+	if err := validate.RejectControlChars(name, "sheet-name"); err != nil {
+		return "", "", common.FlagErrorf("%v", err)
+	}
+	return "", name, nil
+}
+
+// sheetSelectorForToolInput packs --sheet-id / --sheet-name into the tool
+// input map, omitting empty fields. Use after resolveSheetSelector returns.
+func sheetSelectorForToolInput(input map[string]interface{}, sheetID, sheetName string) {
+	if sheetID != "" {
+		input["sheet_id"] = sheetID
+	}
+	if sheetName != "" {
+		input["sheet_name"] = sheetName
+	}
+}
+
+// sheetSelectorPlaceholder returns a human-readable identifier for the
+// selected sheet, suitable for DryRun output. Avoids leaking that --sheet-name
+// would be resolved server-side at execute time.
+func sheetSelectorPlaceholder(sheetID, sheetName string) string {
+	if sheetID != "" {
+		return sheetID
+	}
+	return "<resolve:" + sheetName + ">"
+}

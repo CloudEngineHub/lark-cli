@@ -65,8 +65,6 @@
 | --- | --- | --- | --- | --- |
 | `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
 | `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
-| `--sheet-id` | 公共 | string | XOR | 工作表 reference_id（与 `--sheet-name` 二选一） |
-| `--sheet-name` | 公共 | string | XOR | 工作表名称（与 `--sheet-id` 二选一） |
 | `--title` | 专有 | string | 是 | 新工作表名称 |
 | `--index` | 专有 | int | 否 | 插入位置；省略时附加到末尾 |
 | `--row-count` | 专有 | int | 否 | 初始行数，默认 100 |
@@ -104,6 +102,7 @@
 | `--sheet-id` | 公共 | string | XOR | 工作表 reference_id（与 `--sheet-name` 二选一） |
 | `--sheet-name` | 公共 | string | XOR | 工作表名称（与 `--sheet-id` 二选一） |
 | `--index` | 专有 | int | 是 | 目标位置（0-based） |
+| `--source-index` | 专有 | int | 否 | 源位置（0-based）；可选，未传时由 CLI runtime 根据 --sheet-id / --sheet-name 当前在工作簿中的 index 自动派生 |
 | `--dry-run` | 系统 | bool | 否 |  |
 
 ### `+sheet-copy`

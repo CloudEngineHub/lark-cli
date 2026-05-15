@@ -12,5 +12,13 @@ func Shortcuts() []common.Shortcut {
 	return []common.Shortcut{
 		// lark_sheet_workbook
 		WorkbookInfo,
+		SheetCreate,
+		SheetDelete,
+		SheetRename,
+		SheetMove,
+		SheetCopy,
+		SheetHide,
+		SheetUnhide,
+		SheetSetTabColor,
 	}
 }
