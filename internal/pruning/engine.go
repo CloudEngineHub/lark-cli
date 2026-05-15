@@ -84,6 +84,28 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 		return Decision{Allowed: true}
 	}
 
+	// A registered Rule expresses intent over the closed risk taxonomy
+	// (read / write / high-risk-write). Two ways a command can fall
+	// outside that taxonomy -- both are fail-closed before any other
+	// axis runs, so an unreasoned command never slips past an
+	// "agent read-only" rule.
+	cmdRisk, hasRisk := cmdmeta.Risk(cmd)
+	if !hasRisk {
+		return Decision{
+			Allowed:    false,
+			ReasonCode: "risk_not_annotated",
+			Reason:     "command has no risk annotation; required when a pruning rule is active",
+		}
+	}
+	cmdRank, cmdRankOk := platform.RiskRank(cmdRisk)
+	if !cmdRankOk {
+		return Decision{
+			Allowed:    false,
+			ReasonCode: "risk_invalid",
+			Reason:     "command has invalid risk annotation; must be one of read|write|high-risk-write",
+		}
+	}
+
 	// Axis 1: Deny has priority.
 	if matchesAny(r.Deny, path) {
 		return Decision{
@@ -102,23 +124,13 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 		}
 	}
 
-	// Axis 3: MaxRisk. Unknown command risk is treated as ALLOW per
-	// hard-constraint #11 -- we cannot deny here without breaking
-	// unannotated legacy commands. The hook layer follows the same rule
-	// (risk-based Selectors do not match unknown); a safety-side plugin
-	// that wants to cover unannotated commands composes explicitly via
-	// ByWrite().Or(ByUnknownRisk()).
+	// Axis 3: MaxRisk.
 	if r.MaxRisk != "" {
-		cmdRisk, ok := cmdmeta.Risk(cmd)
-		if ok {
-			limit, limitOk := platform.RiskRank(r.MaxRisk)
-			cmdRank, cmdRankOk := platform.RiskRank(cmdRisk)
-			if limitOk && cmdRankOk && cmdRank > limit {
-				return Decision{
-					Allowed:    false,
-					ReasonCode: reasonCodeForRisk(cmdRisk),
-					Reason:     "command risk exceeds rule max_risk",
-				}
+		if limit, limitOk := platform.RiskRank(r.MaxRisk); limitOk && cmdRank > limit {
+			return Decision{
+				Allowed:    false,
+				ReasonCode: reasonCodeForRisk(cmdRisk),
+				Reason:     "command risk exceeds rule max_risk",
 			}
 		}
 	}

@@ -48,10 +48,10 @@ func TestByDomain(t *testing.T) {
 	}
 }
 
-// All risk-based selectors share one contract: unknown (no annotation)
-// never matches. This test pins each one. A plugin author who wants the
-// previous "safety-side" semantics must compose .Or(ByUnknownRisk())
-// explicitly -- covered by TestByUnknownRisk_optInSafety below.
+// Risk-based selectors match only against the closed taxonomy
+// (read / write / high-risk-write). Commands without a risk annotation
+// never match; the pruning engine guarantees such commands cannot reach
+// hook dispatch when any Rule is registered.
 func TestByExactRisk_unknownDoesNotMatch(t *testing.T) {
 	sel := platform.ByExactRisk("write")
 	if !sel(fakeView{risk: "write", riskOK: true}) {
@@ -83,30 +83,6 @@ func TestByWrite_byReadOnly(t *testing.T) {
 	}
 	if platform.ByReadOnly()(fakeView{riskOK: false}) {
 		t.Errorf("unknown must not match ByReadOnly")
-	}
-}
-
-// ByUnknownRisk is the explicit opt-in for safety-side widening. A
-// plugin that wants the previous "match-write-or-unknown" behaviour
-// composes ByWrite().Or(ByUnknownRisk()).
-func TestByUnknownRisk_optInSafety(t *testing.T) {
-	if !platform.ByUnknownRisk()(fakeView{riskOK: false}) {
-		t.Errorf("unannotated command should match ByUnknownRisk")
-	}
-	if platform.ByUnknownRisk()(fakeView{risk: "write", riskOK: true}) {
-		t.Errorf("annotated command must not match ByUnknownRisk")
-	}
-
-	// Composition: safety-side widening of ByWrite.
-	safeWrite := platform.ByWrite().Or(platform.ByUnknownRisk())
-	if !safeWrite(fakeView{risk: "write", riskOK: true}) {
-		t.Errorf("annotated write should match safeWrite")
-	}
-	if !safeWrite(fakeView{riskOK: false}) {
-		t.Errorf("unknown should match safeWrite via Or(ByUnknownRisk)")
-	}
-	if safeWrite(fakeView{risk: "read", riskOK: true}) {
-		t.Errorf("annotated read must not match safeWrite")
 	}
 }
 

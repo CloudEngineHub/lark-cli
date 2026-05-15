@@ -18,7 +18,7 @@
 //   - Observer       - side-effect-only callback, panic-safe, runs Before / After RunE
 //   - Wrapper        - middleware that can short-circuit via AbortError
 //   - LifecycleHandler - reacts to Startup / Shutdown / etc. (LifecycleEvent + When)
-//   - Selector       - chooses which commands a hook applies to (ByDomain / ByWrite / ByUnknownRisk / And / Or / Not, etc.); unknown-risk commands never match risk-based selectors, opt in via ByUnknownRisk()
+//   - Selector       - chooses which commands a hook applies to (ByDomain / ByWrite / ByReadOnly / ByExactRisk / And / Or / Not, etc.)
 //   - Handler        - the inner "run the command" function Wrappers compose around
 //   - Invocation     - per-call context passed to handlers (Cmd view + DeniedByPolicy / StrictMode / Identity)
 //   - AbortError     - structured short-circuit error from a Wrapper; framework namespaces HookName

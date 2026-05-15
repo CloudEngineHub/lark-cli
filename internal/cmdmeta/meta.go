@@ -21,9 +21,10 @@
 //                  GetSupportedIdentities.
 //
 // Missing values are returned as the zero value with ok=false (where the
-// signature exposes it). The pruning engine's contract says unknown defaults
-// to ALLOW (do not synthesise a default value here -- let the consumer decide
-// how to interpret unknown).
+// signature exposes it). Interpretation is up to the consumer: the pruning
+// engine treats a missing risk as fail-closed when a Rule is registered
+// and as allow when no Rule is registered. Identities still defaults to
+// ALLOW. Do not synthesise defaults here -- let each consumer decide.
 package cmdmeta
 
 import (
@@ -107,7 +108,9 @@ func Domain(cmd *cobra.Command) string {
 }
 
 // Risk returns the nearest-ancestor risk level (via cmdutil.GetRisk).
-// ok=false signals "unknown" -- pruning treats this as ALLOW by contract.
+// ok=false signals "unknown" -- the pruning engine treats this as
+// fail-closed (deny with risk_not_annotated) whenever a Rule is active,
+// and as allow when no Rule is registered.
 func Risk(cmd *cobra.Command) (level string, ok bool) {
 	for c := cmd; c != nil; c = c.Parent() {
 		if level, ok = cmdutil.GetRisk(c); ok {

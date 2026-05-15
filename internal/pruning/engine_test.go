@@ -130,20 +130,105 @@ func TestEvaluate_maxRiskCutoff(t *testing.T) {
 	}
 }
 
-// Hard-constraint #11: unknown risk_level means ALLOW. A command without a
-// risk annotation must pass even under MaxRisk=read.
-func TestEvaluate_unknownRiskIsAllow(t *testing.T) {
+// Unannotated commands are implicit-deny when any Rule is registered.
+// The closed risk taxonomy (read / write / high-risk-write) is the only
+// vocabulary a Rule can reason about; an unannotated command falls
+// outside that vocabulary and is denied with reason_code
+// "risk_not_annotated", regardless of whether the rule sets MaxRisk.
+func TestEvaluate_unannotatedRiskIsDeny(t *testing.T) {
 	root := &cobra.Command{Use: "lark-cli"}
 	docs := &cobra.Command{Use: "docs"}
 	root.AddCommand(docs)
-	// Note: no SetRisk on this command -> unknown
+	// Note: no SetRisk on this command -> unannotated
 	orphan := &cobra.Command{Use: "+orphan", RunE: noop}
 	docs.AddCommand(orphan)
 
+	// Rule without MaxRisk still triggers the implicit deny.
+	e := pruning.New(&platform.Rule{Allow: []string{"docs/**"}})
+	got := e.EvaluateAll(root)
+	if got["docs/+orphan"].Allowed {
+		t.Fatalf("unannotated risk must be denied when a Rule is registered")
+	}
+	if got["docs/+orphan"].ReasonCode != "risk_not_annotated" {
+		t.Errorf("ReasonCode = %q, want risk_not_annotated", got["docs/+orphan"].ReasonCode)
+	}
+
+	// And with MaxRisk it still uses risk_not_annotated (the missing-
+	// annotation gate runs before the MaxRisk axis).
+	e = pruning.New(&platform.Rule{MaxRisk: "read"})
+	got = e.EvaluateAll(root)
+	if got["docs/+orphan"].ReasonCode != "risk_not_annotated" {
+		t.Errorf("ReasonCode under MaxRisk = %q, want risk_not_annotated", got["docs/+orphan"].ReasonCode)
+	}
+
+	// An empty Rule{} (no Allow / Deny / MaxRisk / Identities) still
+	// triggers the implicit deny. "any registered Rule = enter the safety
+	// boundary" is the design contract; pin it so future edits cannot
+	// silently weaken it.
+	e = pruning.New(&platform.Rule{})
+	got = e.EvaluateAll(root)
+	if got["docs/+orphan"].Allowed {
+		t.Fatalf("empty Rule{} must still deny unannotated commands")
+	}
+	if got["docs/+orphan"].ReasonCode != "risk_not_annotated" {
+		t.Errorf("empty Rule{} ReasonCode = %q, want risk_not_annotated", got["docs/+orphan"].ReasonCode)
+	}
+
+	// Without any Rule, unannotated commands are still allowed (no
+	// pruning engine is invoked when no plugin registers a Rule).
+	e = pruning.New(nil)
+	got = e.EvaluateAll(root)
+	if !got["docs/+orphan"].Allowed {
+		t.Fatalf("nil Rule must allow unannotated commands (no main-flow impact)")
+	}
+}
+
+// Invalid risk annotations (typos like "wrtie" or anything outside the
+// read|write|high-risk-write taxonomy) are denied with reason_code
+// "risk_invalid". Without this gate they used to pass the MaxRisk axis
+// because RiskRank returned ok=false and the comparison was skipped --
+// a typo SetRisk would silently slip past an "agent read-only" rule.
+func TestEvaluate_invalidRiskIsDeny(t *testing.T) {
+	root := &cobra.Command{Use: "lark-cli"}
+	docs := &cobra.Command{Use: "docs"}
+	root.AddCommand(docs)
+	typo := &cobra.Command{Use: "+typo", RunE: noop}
+	cmdutil.SetRisk(typo, "wrtie") // typo for "write"
+	docs.AddCommand(typo)
+
+	// Even under MaxRisk=read the typo command must not slip through.
 	e := pruning.New(&platform.Rule{MaxRisk: "read"})
 	got := e.EvaluateAll(root)
-	if !got["docs/+orphan"].Allowed {
-		t.Fatalf("unknown risk must pass MaxRisk=read (constraint #11)")
+	if got["docs/+typo"].Allowed {
+		t.Fatalf("invalid risk must be denied under MaxRisk=read, got allowed")
+	}
+	if got["docs/+typo"].ReasonCode != "risk_invalid" {
+		t.Errorf("ReasonCode = %q, want risk_invalid", got["docs/+typo"].ReasonCode)
+	}
+
+	// Same when no MaxRisk is set -- the taxonomy check runs unconditionally
+	// once a Rule is present.
+	e = pruning.New(&platform.Rule{Allow: []string{"docs/**"}})
+	got = e.EvaluateAll(root)
+	if got["docs/+typo"].ReasonCode != "risk_invalid" {
+		t.Errorf("ReasonCode without MaxRisk = %q, want risk_invalid", got["docs/+typo"].ReasonCode)
+	}
+
+	// The risk_invalid gate must fire BEFORE Deny matching, otherwise a
+	// typo command landing in the deny list would surface as
+	// command_denylisted and mask the underlying taxonomy violation.
+	e = pruning.New(&platform.Rule{Deny: []string{"docs/+typo"}})
+	got = e.EvaluateAll(root)
+	if got["docs/+typo"].ReasonCode != "risk_invalid" {
+		t.Errorf("ReasonCode under Deny match = %q, want risk_invalid (taxonomy gate must precede Deny)", got["docs/+typo"].ReasonCode)
+	}
+
+	// Without any Rule, invalid risk is not policed (same main-flow
+	// no-impact rule as risk_not_annotated).
+	e = pruning.New(nil)
+	got = e.EvaluateAll(root)
+	if !got["docs/+typo"].Allowed {
+		t.Fatalf("nil Rule must allow invalid risk (no main-flow impact)")
 	}
 }
 
@@ -168,18 +253,19 @@ func TestEvaluate_identitiesIntersection(t *testing.T) {
 	}
 }
 
-// Unknown identities also defaults to ALLOW. A command without
-// supportedIdentities passes any identity filter.
+// Unknown identities defaults to ALLOW. A command with risk annotated
+// but without supportedIdentities passes any identity filter.
 func TestEvaluate_unknownIdentitiesIsAllow(t *testing.T) {
 	root := &cobra.Command{Use: "lark-cli"}
 	cmd := &cobra.Command{Use: "+x", RunE: noop}
+	cmdutil.SetRisk(cmd, "read")
 	root.AddCommand(cmd)
 	// no SetSupportedIdentities
 
 	e := pruning.New(&platform.Rule{Identities: []string{"bot"}})
 	got := e.EvaluateAll(root)
 	if !got["+x"].Allowed {
-		t.Fatalf("unknown identities must pass any identity rule (constraint #11)")
+		t.Fatalf("unknown identities must pass any identity rule")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/larksuite/cli/extension/platform"
+	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/policydecision"
 	"github.com/larksuite/cli/internal/pruning"
@@ -47,12 +48,27 @@ func TestBuildDeniedByPath_parentAggregationAllChildrenDenied(t *testing.T) {
 	im := &cobra.Command{Use: "im"}
 	root.AddCommand(im)
 	send := &cobra.Command{Use: "+send", RunE: noop}
+	cmdutil.SetRisk(send, "write")
 	im.AddCommand(send)
 	search := &cobra.Command{Use: "+search", RunE: noop}
+	cmdutil.SetRisk(search, "read")
 	im.AddCommand(search)
 
+	// Risk is set on both leaves so the rejection comes from the Allow
+	// axis (the contract this test pins), not from the risk gate.
 	e := pruning.New(&platform.Rule{Allow: []string{"docs/**"}}) // none of im/* matches
 	decisions := e.EvaluateAll(root)
+
+	// Pin the rejection axis: both leaves are rejected by Allow miss,
+	// NOT by the risk_not_annotated gate. If a future edit drops the
+	// SetRisk lines above, this assertion fails and the test stops
+	// silently testing the wrong axis.
+	if rc := decisions["im/+send"].ReasonCode; rc != "domain_not_allowed" {
+		t.Errorf("im/+send ReasonCode = %q, want domain_not_allowed", rc)
+	}
+	if rc := decisions["im/+search"].ReasonCode; rc != "domain_not_allowed" {
+		t.Errorf("im/+search ReasonCode = %q, want domain_not_allowed", rc)
+	}
 
 	denied := pruning.BuildDeniedByPath(root, decisions,
 		pruning.ResolveSource{Kind: pruning.SourceYAML, Name: "/policy.yml"}, "agent")
@@ -83,9 +99,11 @@ func TestBuildDeniedByPath_partialDenialKeepsParent(t *testing.T) {
 	root.AddCommand(docs)
 
 	fetch := &cobra.Command{Use: "+fetch", RunE: noop}
+	cmdutil.SetRisk(fetch, "read")
 	docs.AddCommand(fetch) // allowed
 
 	delete := &cobra.Command{Use: "+delete", RunE: noop}
+	cmdutil.SetRisk(delete, "high-risk-write")
 	docs.AddCommand(delete) // denied by Deny
 
 	e := pruning.New(&platform.Rule{
@@ -128,8 +146,10 @@ func TestBuildDeniedByPath_rootNeverDenied(t *testing.T) {
 func TestBuildDeniedByPath_hybridParentOwnAllowedKeepsAlive(t *testing.T) {
 	root := &cobra.Command{Use: "lark-cli"}
 	docs := &cobra.Command{Use: "docs", RunE: noop} // hybrid: own RunE + subs
+	cmdutil.SetRisk(docs, "read")
 	root.AddCommand(docs)
 	delete := &cobra.Command{Use: "+delete", RunE: noop}
+	cmdutil.SetRisk(delete, "high-risk-write")
 	docs.AddCommand(delete)
 
 	// Allow "docs" (parent) but deny "+delete" child.

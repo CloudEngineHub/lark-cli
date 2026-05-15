@@ -58,19 +58,14 @@ func ByIdentity(id string) Selector {
 	}
 }
 
-// All risk-based selectors below share a single contract: **commands
-// without a risk_level annotation (unknown) NEVER match.** Many commands
-// in the repo are unannotated; a "unknown = match" semantics would force
-// safety / approval plugins to silently cover the whole CLI surface,
-// punishing integrators rather than helping. Plugin authors who do want
-// to cover unannotated commands should compose explicitly:
-//
-//	platform.ByWrite().Or(platform.ByUnknownRisk())
-//
-// This makes the safety widening opt-in and visible at the call site.
+// Risk-based selectors below match only commands whose declared risk
+// equals the selector's target level. The closed taxonomy is read /
+// write / high-risk-write — there is no "unknown" branch in the public
+// API. When any pruning Rule is registered, the pruning engine treats
+// unannotated commands as implicit deny, so risk-based selectors never
+// see them in hook dispatch.
 
-// ByExactRisk matches commands whose declared risk level is exactly
-// level. Unknown (no annotation) does not match.
+// ByExactRisk matches commands whose declared risk level is exactly level.
 func ByExactRisk(level Risk) Selector {
 	return func(cmd CommandView) bool {
 		v, ok := cmd.Risk()
@@ -79,7 +74,6 @@ func ByExactRisk(level Risk) Selector {
 }
 
 // ByWrite matches commands whose risk is "write" or "high-risk-write".
-// Unknown does not match.
 func ByWrite() Selector {
 	return func(cmd CommandView) bool {
 		v, ok := cmd.Risk()
@@ -87,27 +81,11 @@ func ByWrite() Selector {
 	}
 }
 
-// ByReadOnly matches commands whose risk is "read". Unknown does not
-// match.
+// ByReadOnly matches commands whose risk is "read".
 func ByReadOnly() Selector {
 	return func(cmd CommandView) bool {
 		v, ok := cmd.Risk()
 		return ok && v == RiskRead
-	}
-}
-
-// ByUnknownRisk matches commands that carry no risk_level annotation.
-// The intended use is opt-in safety widening via composition, e.g.
-//
-//	platform.ByWrite().Or(platform.ByUnknownRisk())
-//
-// for an approval gate that wants to also cover commands a developer
-// forgot to annotate. Use sparingly: matching unknown by default would
-// rope in every unannotated subcommand including reads.
-func ByUnknownRisk() Selector {
-	return func(cmd CommandView) bool {
-		_, ok := cmd.Risk()
-		return !ok
 	}
 }
 

@@ -17,11 +17,10 @@ package platform
 //   - Path() is the canonical slash form ("docs/+fetch"), matching the
 //     doublestar glob semantics used by Rule.Allow / Rule.Deny.
 //
-//   - Risk() returns ok=false when the command is unannotated. Consumers
-//     interpret this themselves -- the pruning engine treats it as ALLOW,
-//     and risk-based Selectors do not match unknown either. A safety-side
-//     hook that wants to cover unannotated commands composes explicitly:
-//     ByWrite().Or(ByUnknownRisk()).
+//   - Risk() returns ok=false when the command is unannotated. The
+//     pruning engine treats an unannotated command as implicit deny
+//     whenever any Rule is registered, so risk-based Selectors never see
+//     unannotated commands during normal hook dispatch.
 type CommandView interface {
 	// Path is the canonical slash-separated path, rootless ("docs/+update").
 	Path() string
