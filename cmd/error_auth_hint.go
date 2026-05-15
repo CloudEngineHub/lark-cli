@@ -4,12 +4,16 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	internalauth "github.com/larksuite/cli/internal/auth"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/credential"
+	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/registry"
 	"github.com/larksuite/cli/shortcuts"
@@ -20,10 +24,14 @@ import (
 // enrichMissingScopeError preserves the original need_user_authorization
 // message and appends a scope hint when the current command declares the
 // required scopes locally.
+// It also logs the auth failure reason using keychain.LogAuthError.
 func enrichMissingScopeError(f *cmdutil.Factory, exitErr *output.ExitError) {
 	if exitErr == nil || exitErr.Detail == nil {
 		return
 	}
+
+	logAuthFailureReason(exitErr)
+
 	if !internalauth.IsNeedUserAuthorizationError(exitErr) {
 		return
 	}
@@ -39,6 +47,93 @@ func enrichMissingScopeError(f *cmdutil.Factory, exitErr *output.ExitError) {
 		return
 	}
 	exitErr.Detail.Hint += "\n" + scopeHint
+}
+
+// logAuthFailureReason extracts authorization-related errors from exitErr and logs
+// the failure reason using keychain.LogAuthError.
+func logAuthFailureReason(exitErr *output.ExitError) {
+	if exitErr.Detail == nil {
+		return
+	}
+
+	// Handle NeedAuthorizationError first
+	var needAuthErr *internalauth.NeedAuthorizationError
+	if errors.As(exitErr.Err, &needAuthErr) {
+		errMsg := buildAuthFailureErrorMessage(needAuthErr)
+		keychain.LogAuthError("auth", "need_authorization", fmt.Errorf(errMsg))
+		return
+	}
+
+	// Handle TokenUnavailableError
+	var unavailableErr *credential.TokenUnavailableError
+	if errors.As(exitErr.Err, &unavailableErr) {
+		errMsg := fmt.Sprintf("reason=no_token source=%s type=%s", unavailableErr.Source, unavailableErr.Type)
+		keychain.LogAuthError("auth", "token_unavailable", fmt.Errorf(errMsg))
+		return
+	}
+
+	// Handle general auth errors (type "auth")
+	if exitErr.Detail.Type == "auth" {
+		errMsg := fmt.Sprintf("reason=auth_error message=%q", exitErr.Detail.Message)
+		keychain.LogAuthError("auth", "auth_error", fmt.Errorf(errMsg))
+	}
+}
+
+// extractNeedAuthorizationError extracts NeedAuthorizationError from an error,
+// checking both direct errors and wrapped errors.
+func extractNeedAuthorizationError(err error, target **internalauth.NeedAuthorizationError) bool {
+	if err == nil {
+		return false
+	}
+
+	if internalauth.IsNeedUserAuthorizationError(err) {
+		// Try to extract the actual NeedAuthorizationError using errors.As
+		var needAuthErr *internalauth.NeedAuthorizationError
+		if errors.As(err, &needAuthErr) {
+			*target = needAuthErr
+			return true
+		}
+
+		// Fallback: create a synthetic error with info from message
+		*target = &internalauth.NeedAuthorizationError{UserOpenId: "unknown"}
+		return true
+	}
+	return false
+}
+
+// buildAuthFailureErrorMessage constructs a detailed error message for auth failure logging.
+func buildAuthFailureErrorMessage(err *internalauth.NeedAuthorizationError) string {
+	if err == nil {
+		return "unknown auth failure"
+	}
+
+	var parts []string
+	parts = append(parts, fmt.Sprintf("user=%s", err.UserOpenId))
+
+	switch err.Reason {
+	case internalauth.ReasonNoToken:
+		parts = append(parts, "reason=no_token")
+	case internalauth.ReasonTokenExpired:
+		parts = append(parts, "reason=token_expired")
+	case internalauth.ReasonRefreshExpired:
+		parts = append(parts, "reason=refresh_expired")
+		if err.GrantedAt > 0 {
+			grantedTime := time.UnixMilli(err.GrantedAt).Format(time.RFC3339)
+			parts = append(parts, fmt.Sprintf("refresh_token_granted_at=%s", grantedTime))
+		}
+	case internalauth.ReasonRefreshFailed:
+		parts = append(parts, "reason=refresh_failed")
+		if err.GrantedAt > 0 {
+			grantedTime := time.UnixMilli(err.GrantedAt).Format(time.RFC3339)
+			parts = append(parts, fmt.Sprintf("refresh_token_granted_at=%s", grantedTime))
+		}
+	case internalauth.ReasonPermissionDenied:
+		parts = append(parts, "reason=permission_denied")
+	default:
+		parts = append(parts, fmt.Sprintf("reason=%s", err.Reason))
+	}
+
+	return strings.Join(parts, " ")
 }
 
 // resolveDeclaredScopesForCurrentCommand returns the scopes declared by the
