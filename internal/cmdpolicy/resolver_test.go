@@ -63,7 +63,11 @@ func TestResolve_yamlWhenNoPlugin(t *testing.T) {
 }
 
 func TestResolve_missingYamlIsNoRule(t *testing.T) {
-	got, src, err := cmdpolicy.Resolve(nil, "/nonexistent/policy.yml")
+	// A guaranteed-missing path under t.TempDir() keeps the test
+	// hermetic — a stray `/nonexistent/policy.yml` could in principle
+	// exist on some sandbox runners and make the assertion misleading.
+	missing := filepath.Join(t.TempDir(), "absent-policy.yml")
+	got, src, err := cmdpolicy.Resolve(nil, missing)
 	if err != nil {
 		t.Fatalf("missing yaml should not error, got %v", err)
 	}

@@ -257,7 +257,17 @@ func aggregateParents(cmd *cobra.Command, denied map[string]Denial) bool {
 	}
 
 	if !liveChildSeen {
-		// No reachable runnable descendant, nothing to aggregate.
+		// No reachable runnable descendant in children, but cmd itself
+		// may still be a runnable hybrid (own RunE + placeholder
+		// children). The contract is "every runnable descendant
+		// beneath cmd (including cmd itself when runnable) is denied",
+		// so when cmd is runnable, the answer depends on whether cmd
+		// itself was denied. Returning false unconditionally here lost
+		// that signal and blocked aggregation up the chain.
+		if cmdRunnable {
+			_, ownDenied := denied[cmdPath]
+			return ownDenied
+		}
 		return false
 	}
 

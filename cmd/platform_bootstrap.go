@@ -44,6 +44,13 @@ func applyUserPolicyPruning(rootCmd *cobra.Command, pluginRules []cmdpolicy.Plug
 
 	rule, source, err := cmdpolicy.Resolve(pluginRules, yamlPath)
 	if err != nil {
+		// Yaml-only failures are fail-OPEN at the caller (warn and
+		// continue), but the active-policy snapshot is process-global
+		// and may still carry data from a previous build in long-lived
+		// embedders / tests. Clear it explicitly so `config policy
+		// show` reports "no policy" instead of a stale rule that
+		// doesn't reflect the current command tree.
+		cmdpolicy.SetActive(nil)
 		return err
 	}
 	if rule == nil {

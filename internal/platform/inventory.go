@@ -202,6 +202,12 @@ var (
 
 // SetActiveInventory records the inventory built at bootstrap. Called
 // once from cmd/policy.go after install + wireHooks complete.
+//
+// A deep copy is taken so the snapshot is immune to later mutations of
+// the input by the caller (or by any other goroutine reading the same
+// PluginEntry slice). Without deep-copy, the shallow `cp := *inv`
+// previously still aliased Plugins / observer / wrapper / lifecycle
+// slices and the embedded RuleView's slice fields.
 func SetActiveInventory(inv *Inventory) {
 	inventoryMu.Lock()
 	defer inventoryMu.Unlock()
@@ -209,18 +215,50 @@ func SetActiveInventory(inv *Inventory) {
 		activeInventory = nil
 		return
 	}
-	cp := *inv
-	activeInventory = &cp
+	activeInventory = cloneInventory(inv)
 }
 
-// GetActiveInventory returns a copy of the inventory, or nil if
-// bootstrap has not finished.
+// GetActiveInventory returns a deep copy of the inventory, or nil if
+// bootstrap has not finished. Same reasoning as SetActiveInventory:
+// returning a shallow copy would let callers reach into the stored
+// global through any of the embedded slices.
 func GetActiveInventory() *Inventory {
 	inventoryMu.RLock()
 	defer inventoryMu.RUnlock()
 	if activeInventory == nil {
 		return nil
 	}
-	cp := *activeInventory
-	return &cp
+	return cloneInventory(activeInventory)
+}
+
+// cloneInventory deep-copies every level the snapshot exposes:
+// top-level struct, Plugins slice, each PluginEntry's hook slices, and
+// the rule's slice fields. The hook entries themselves are value types
+// so the slice copy already disjoints them.
+func cloneInventory(in *Inventory) *Inventory {
+	if in == nil {
+		return nil
+	}
+	out := &Inventory{
+		Plugins: make([]PluginEntry, len(in.Plugins)),
+	}
+	for i, p := range in.Plugins {
+		entry := PluginEntry{
+			Name:         p.Name,
+			Version:      p.Version,
+			Capabilities: p.Capabilities,
+		}
+		if p.Rule != nil {
+			rv := *p.Rule
+			rv.Allow = append([]string(nil), p.Rule.Allow...)
+			rv.Deny = append([]string(nil), p.Rule.Deny...)
+			rv.Identities = append([]string(nil), p.Rule.Identities...)
+			entry.Rule = &rv
+		}
+		entry.Observers = append([]HookEntry(nil), p.Observers...)
+		entry.Wrappers = append([]HookEntry(nil), p.Wrappers...)
+		entry.Lifecycles = append([]HookEntry(nil), p.Lifecycles...)
+		out.Plugins[i] = entry
+	}
+	return out
 }

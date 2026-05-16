@@ -30,6 +30,10 @@ var (
 // SetActive records the policy that ends up applied. Called exactly once
 // per process from cmd/policy.go::applyUserPolicyPruning. The mutex is
 // belt-and-braces in case future test paths interleave with bootstrap.
+//
+// A deep copy is taken so the snapshot is immune to later mutations of
+// the input by the caller (a plugin-supplied *Rule could otherwise
+// mutate the embedded Allow/Deny/Identities slices after we stored it).
 func SetActive(p *ActivePolicy) {
 	activeMu.Lock()
 	defer activeMu.Unlock()
@@ -37,19 +41,37 @@ func SetActive(p *ActivePolicy) {
 		activePolicy = nil
 		return
 	}
-	cp := *p
-	activePolicy = &cp
+	activePolicy = cloneActivePolicy(p)
 }
 
-// GetActive returns a copy of the recorded policy, or nil if bootstrap
-// has not finished or no rule applied.
+// GetActive returns a deep copy of the recorded policy, or nil if
+// bootstrap has not finished or no rule applied. Callers can freely
+// mutate the result — including the embedded Rule slices — without
+// affecting the stored global.
 func GetActive() *ActivePolicy {
 	activeMu.RLock()
 	defer activeMu.RUnlock()
 	if activePolicy == nil {
 		return nil
 	}
-	cp := *activePolicy
+	return cloneActivePolicy(activePolicy)
+}
+
+// cloneActivePolicy deep-copies the top-level struct plus the embedded
+// Rule's slice fields. Other fields (Source, YAMLPath, DeniedPaths)
+// are value types so the struct copy already disjoints them.
+func cloneActivePolicy(in *ActivePolicy) *ActivePolicy {
+	if in == nil {
+		return nil
+	}
+	cp := *in
+	if in.Rule != nil {
+		rule := *in.Rule
+		rule.Allow = append([]string(nil), in.Rule.Allow...)
+		rule.Deny = append([]string(nil), in.Rule.Deny...)
+		rule.Identities = append([]platform.Identity(nil), in.Rule.Identities...)
+		cp.Rule = &rule
+	}
 	return &cp
 }
 

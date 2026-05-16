@@ -300,7 +300,13 @@ func (p restrictPlugin) Install(r platform.Registrar) error {
 }
 
 func TestInstallAll_restrictPropagatesRule(t *testing.T) {
-	rule := &platform.Rule{Name: "secaudit-policy", MaxRisk: "read"}
+	rule := &platform.Rule{
+		Name:       "secaudit-policy",
+		MaxRisk:    "read",
+		Allow:      []string{"docs/**"},
+		Deny:       []string{"docs/+delete-doc"},
+		Identities: []platform.Identity{"bot"},
+	}
 	result, err := internalplatform.InstallAll([]platform.Plugin{restrictPlugin{rule: rule}}, nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
@@ -308,9 +314,36 @@ func TestInstallAll_restrictPropagatesRule(t *testing.T) {
 	if len(result.PluginRules) != 1 {
 		t.Fatalf("expected 1 plugin rule, got %d", len(result.PluginRules))
 	}
-	if result.PluginRules[0].Rule != rule {
-		t.Errorf("rule pointer should round-trip without copying")
+	stored := result.PluginRules[0].Rule
+	if stored == nil {
+		t.Fatalf("stored rule is nil")
 	}
+
+	// stagingRegistrar.Restrict defensively clones the plugin-supplied
+	// rule so a misbehaving plugin can't mutate it after Install
+	// returns. The clone must carry identical contents but live on a
+	// distinct pointer.
+	if stored == rule {
+		t.Errorf("stored rule should be a clone, got identical pointer")
+	}
+	if stored.Name != rule.Name || stored.MaxRisk != rule.MaxRisk {
+		t.Errorf("stored rule lost data: %+v", stored)
+	}
+	if got, want := len(stored.Allow), len(rule.Allow); got != want {
+		t.Errorf("stored Allow len = %d, want %d", got, want)
+	}
+
+	// Verify the clone is actually isolated: mutating the plugin's
+	// rule after install must not change the stored one.
+	rule.Allow[0] = "evil/**"
+	rule.Deny = append(rule.Deny, "extra/**")
+	if stored.Allow[0] == "evil/**" {
+		t.Errorf("Allow slice aliased plugin storage")
+	}
+	if len(stored.Deny) != 1 {
+		t.Errorf("Deny slice aliased plugin storage: %v", stored.Deny)
+	}
+
 	if result.PluginRules[0].PluginName != "secaudit" {
 		t.Errorf("PluginName = %q", result.PluginRules[0].PluginName)
 	}

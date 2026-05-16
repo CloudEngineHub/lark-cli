@@ -122,8 +122,14 @@ func parseSemverPrefix(s string) (parts [3]int, err error) {
 		}
 	}
 	fields := strings.Split(s, ".")
+	// Reject `1.2.3.4` and longer instead of silently truncating —
+	// truncation hides the typo and lets a malformed RequiredCLIVersion
+	// pass validation while the comparator below operates on the wrong
+	// components. Build-version parsing has its own fail-open guard
+	// upstream (see satisfiesRequiredCLIVersion comment about exotic
+	// build tags), so it stays compatible.
 	if len(fields) > 3 {
-		fields = fields[:3]
+		return [3]int{}, fmt.Errorf("version %q has more than three numeric components", s)
 	}
 	for i, f := range fields {
 		n, err := strconv.Atoi(strings.TrimSpace(f))

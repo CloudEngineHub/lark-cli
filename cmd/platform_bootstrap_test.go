@@ -20,6 +20,14 @@ import (
 // tmpHome creates a tempdir, points $HOME at it, and returns the path to
 // the ~/.lark-cli/ subdirectory (created). The HOME env var is restored
 // when the test ends.
+//
+// LARKSUITE_CLI_CONFIG_DIR is force-set to the same path. Without that
+// override, a developer running the tests with a personal
+// LARKSUITE_CLI_CONFIG_DIR exported in their shell (or a CI runner with
+// a baked-in value) would resolve userPolicyPath() to their real
+// machine and bleed unrelated yaml into the test fixtures. With the
+// override pinned here, the test is hermetic regardless of the host
+// environment.
 func tmpHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -29,6 +37,7 @@ func tmpHome(t *testing.T) string {
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	t.Setenv("LARKSUITE_CLI_CONFIG_DIR", cfgDir)
 	return cfgDir
 }
 

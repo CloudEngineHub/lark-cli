@@ -60,8 +60,9 @@ func Apply(root *cobra.Command, deniedByPath map[string]Denial) int {
 		if !ok || d.Layer != LayerPolicy {
 			return
 		}
-		installDenyStub(c, path, d)
-		count++
+		if installDenyStub(c, path, d) {
+			count++
+		}
 	})
 	return count
 }
@@ -156,7 +157,11 @@ func BuildDenialError(path string, d Denial) *output.ExitError {
 //
 //   - AnnotationDenialLayer  -> "policy" or "strict_mode"
 //   - AnnotationDenialSource -> the PolicySource ("yaml", "plugin:foo", ...)
-func installDenyStub(cmd *cobra.Command, path string, d Denial) {
+//
+// Returns true when the stub was actually installed and false on the
+// strict-mode early-return so callers can compute an accurate "commands
+// modified" count.
+func installDenyStub(cmd *cobra.Command, path string, d Denial) bool {
 	// strict-mode wins over user-layer pruning. If the command was
 	// already replaced by a strict-mode stub (cmd/prune.go::strictModeStubFrom
 	// writes layer=strict_mode), do NOT overwrite -- the user-layer
@@ -168,7 +173,7 @@ func installDenyStub(cmd *cobra.Command, path string, d Denial) {
 	// re-labelling detail.layer from "strict_mode" to "policy".
 	if cmd.Annotations != nil &&
 		cmd.Annotations[AnnotationDenialLayer] == LayerStrictMode {
-		return
+		return false
 	}
 	cmd.Hidden = true
 	cmd.DisableFlagParsing = true
@@ -218,4 +223,5 @@ func installDenyStub(cmd *cobra.Command, path string, d Denial) {
 	// set, but leaving a stale Run around is a foot-gun for future
 	// maintainers.
 	cmd.Run = nil
+	return true
 }

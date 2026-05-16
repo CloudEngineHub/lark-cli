@@ -74,18 +74,21 @@ func TestBuildInternal_failClosedAbortsCLI(t *testing.T) {
 	}
 	checkGuardError(t, auth.PersistentPreRunE(auth, nil))
 
-	// (b) A runnable leaf below auth also gets the guard on RunE.
+	// (b) A runnable leaf below auth also gets the guard on RunE. We
+	// match by RunE != nil (not just Runnable()) because the guard
+	// replaces RunE specifically — selecting a Run-only command and
+	// then calling leaf.RunE would nil-deref.
 	var leaf *cobra.Command
 	walk(auth, func(c *cobra.Command) {
 		if leaf != nil {
 			return
 		}
-		if c != auth && c.Runnable() {
+		if c != auth && c.RunE != nil {
 			leaf = c
 		}
 	})
 	if leaf == nil {
-		t.Skip("no runnable auth subcommand found")
+		t.Skip("no auth subcommand with RunE found")
 	}
 	checkGuardError(t, leaf.RunE(leaf, nil))
 }

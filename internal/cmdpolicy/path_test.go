@@ -12,11 +12,11 @@ import (
 
 // RedactHomeDir folds two prefixes:
 //
-//   1. core.GetBaseConfigDir() → "<config>" (covers the
-//      LARKSUITE_CLI_CONFIG_DIR override, which is the only way a real
-//      deployment writes the policy file outside $HOME).
-//   2. The user's home dir → "~" (catches the conventional
-//      ~/.lark-cli/policy.yml path when no override is set).
+//  1. core.GetBaseConfigDir() → "<config>" (covers the
+//     LARKSUITE_CLI_CONFIG_DIR override, which is the only way a real
+//     deployment writes the policy file outside $HOME).
+//  2. The user's home dir → "~" (catches the conventional
+//     ~/.lark-cli/policy.yml path when no override is set).
 //
 // Both folds run in path-prefix space (not string-prefix), so a path
 // like "/Usersfoo" never gets folded against "/Users".

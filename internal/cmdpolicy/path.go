@@ -61,10 +61,10 @@ func useName(cmd *cobra.Command) string {
 // agents / CI logs.
 //
 // It folds, in priority order:
-//   1. core.GetBaseConfigDir() (typically ~/.lark-cli, or a custom
-//      directory under LARKSUITE_CLI_CONFIG_DIR — e.g.
-//      "/private/tmp/sandbox/.lark-cli" in a sandboxed run) → "<config>"
-//   2. The user's home directory → "~"
+//  1. core.GetBaseConfigDir() (typically ~/.lark-cli, or a custom
+//     directory under LARKSUITE_CLI_CONFIG_DIR — e.g.
+//     "/private/tmp/sandbox/.lark-cli" in a sandboxed run) → "<config>"
+//  2. The user's home directory → "~"
 //
 // (1) runs first so a `LARKSUITE_CLI_CONFIG_DIR` pointing outside `$HOME`
 // still produces a stable, non-identifying label. When neither prefix

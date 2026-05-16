@@ -135,7 +135,16 @@ func (r *stagingRegistrar) Restrict(rule *platform.Rule) {
 		r.bufferErr(ReasonInvalidRule, "Restrict(nil)")
 		return
 	}
-	r.rule = rule
+	// Defensive clone: retaining the caller's *Rule directly would let
+	// the plugin mutate Allow/Deny/Identities (or even the whole rule)
+	// after Install returns, bypassing the validation we run on the
+	// stored copy in validateSelf. Take an independent snapshot of
+	// every slice field so the post-validation rule is frozen.
+	cp := *rule
+	cp.Allow = append([]string(nil), rule.Allow...)
+	cp.Deny = append([]string(nil), rule.Deny...)
+	cp.Identities = append([]platform.Identity(nil), rule.Identities...)
+	r.rule = &cp
 }
 
 // --- helpers ---

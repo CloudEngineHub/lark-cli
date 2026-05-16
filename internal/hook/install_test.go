@@ -194,8 +194,10 @@ func TestInstall_observerPanicIsolated(t *testing.T) {
 		},
 	})
 
-	// Capture stderr to make sure the warning was emitted.
-	hook.SetStderrForTesting(&bytes.Buffer{}) // discard
+	// Capture stderr to make sure the warning was emitted. Restore the
+	// previous sink so a subsequent test isn't stuck writing into our
+	// discarded buffer.
+	t.Cleanup(hook.SetStderrForTesting(&bytes.Buffer{})) // discard
 
 	hook.Install(root, reg, fakeViewSource{view: fakeView{path: "+x"}})
 	if err := leaf.RunE(leaf, nil); err != nil {

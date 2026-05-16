@@ -155,7 +155,24 @@ func wrapRunE(cmd *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 // originalRunE is non-nil (the common case), use it; otherwise fall
 // back to the Run variant. Commands without either are a programming
 // error caught at registration time (cmd.Runnable() returns false).
+//
+// The wrapper-propagated ctx is set on cmd via SetContext *before* the
+// inner RunE/Run is invoked, so any context values injected by an
+// upstream Wrapper (auth tokens, request-scoped IDs, trace spans,
+// cancellation deadlines) reach the original handler. Without this
+// hand-off the inner handler would observe c.Context() — the
+// pre-wrapper context — and silently lose every value the Wrap chain
+// added.
+//
+// We restore the previous context on return so a single command's
+// SetContext mutation cannot leak to sibling dispatches that share the
+// same *cobra.Command pointer (cobra reuses the tree across calls in
+// long-running embedders).
 func invokeOriginal(ctx context.Context, c *cobra.Command, args []string, runE func(*cobra.Command, []string) error, run func(*cobra.Command, []string)) error {
+	prev := c.Context()
+	c.SetContext(ctx)
+	defer c.SetContext(prev)
+
 	if runE != nil {
 		return runE(c, args)
 	}

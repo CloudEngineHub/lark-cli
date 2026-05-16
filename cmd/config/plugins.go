@@ -61,8 +61,13 @@ the plugin name as the prefix at registration time, so an entry
 func runConfigPluginsShow(f *cmdutil.Factory) error {
 	inv := internalplatform.GetActiveInventory()
 	if inv == nil {
+		// Always emit the same field set as the populated branch so
+		// AI agents and CI scripts don't have to branch on whether
+		// `total` is present. `note` makes the unusual state explicit
+		// for human readers.
 		output.PrintJson(f.IOStreams.Out, map[string]any{
 			"plugins": []any{},
+			"total":   0,
 			"note":    "no inventory recorded; bootstrap did not finish",
 		})
 		return nil
