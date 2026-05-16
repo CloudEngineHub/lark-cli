@@ -2,46 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [v1.0.32] - 2026-05-15
 
 ### Features
 
-- **extension/platform**: Public plugin SDK with policy engine, hooks,
-  and the `NewPlugin` Builder. Plugins ship as a fork of `lark-cli` that
-  blank-imports the plugin package; the host installs hooks (Observe /
-  Wrap / Lifecycle) and a single optional user-layer `Restrict` rule.
-  Diagnostic commands `lark-cli config plugins show` and
-  `lark-cli config policy show` enumerate the resulting inventory (#910).
+- **doc**: Add `--width`/`--height` flags to `docs +media-insert` (#832)
+- **wiki**: Add `+space-list` / `+node-list` / `+node-copy` shortcuts (#392)
 
-### Breaking Changes
+### Bug Fixes
 
-- **error.type rename — `strict_mode` / `pruning` → `command_denied`**.
-  Both the strict-mode pruning pass and the new user-layer policy
-  engine now emit a single envelope `error.type == "command_denied"`.
-  The original layer is preserved on `detail.layer` (`strict_mode` or
-  `policy`), so agents that need to distinguish can still do so.
-
-  - Old: `error.type == "strict_mode"` and `error.type == "pruning"`.
-  - New: `error.type == "command_denied" && detail.layer == "strict_mode"`
-    or `detail.layer == "policy"`.
-  - Migration: any agent / monitor / script that matches
-    `error.type == "strict_mode"` will silently break — update the
-    match to the new shape.
-
-- **Unknown subcommand returns exit 2 + structured error**. Previously
-  invoking a group with an unknown subcommand (e.g.
-  `lark-cli drive nosuchcommand`) silently printed help and exited 0.
-  It now emits an `error.type == "unknown_subcommand"` envelope and
-  exits with code 2.
-  - Migration: any script / CI step that relied on exit-0 for unknown
-    subcommands must be updated. `lark-cli <group> --help` still
-    returns exit 0 + help as before.
+- **drive**: Preserve parent token on nested overwrite (#908)
+- **selfupdate**: Use `LookPath` instead of `Executable` for binary verification (#886)
+- **registry**: Wait for background meta refresh before test reset (#894)
 
 ### Documentation
 
-- **extension/platform**: Embed the full `reason_code` reference table
-  inside `extension/platform/README.md` so the public SDK landing page
-  no longer links to documents that live outside the repository (#910).
+- **doc**: Add SVG whiteboard support to `lark-doc` v2 skill (#901)
+- **drive**: Add permission public patch error guidance (#863)
 
 ## [v1.0.31] - 2026-05-14
 
@@ -744,6 +721,7 @@ Bundled AI agent skills for intelligent assistance:
 - Bilingual documentation (English & Chinese).
 - CI/CD pipelines: linting, testing, coverage reporting, and automated releases.
 
+[v1.0.32]: https://github.com/larksuite/cli/releases/tag/v1.0.32
 [v1.0.31]: https://github.com/larksuite/cli/releases/tag/v1.0.31
 [v1.0.30]: https://github.com/larksuite/cli/releases/tag/v1.0.30
 [v1.0.29]: https://github.com/larksuite/cli/releases/tag/v1.0.29

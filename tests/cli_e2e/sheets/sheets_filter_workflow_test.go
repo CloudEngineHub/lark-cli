@@ -141,7 +141,6 @@ func TestSheets_FilterWorkflow(t *testing.T) {
 				"sheet_id":          sheetID,
 			},
 			Data: filterData,
-			Yes:  true,
 		})
 		require.NoError(t, err)
 		result.AssertExitCode(t, 0)

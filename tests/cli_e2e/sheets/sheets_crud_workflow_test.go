@@ -240,7 +240,6 @@ func TestSheets_SpreadsheetsResource(t *testing.T) {
 			DefaultAs: "bot",
 			Params:    map[string]any{"spreadsheet_token": spreadsheetToken},
 			Data:      map[string]any{"title": updatedTitle},
-			Yes:       true,
 		})
 		require.NoError(t, err)
 		result.AssertExitCode(t, 0)
