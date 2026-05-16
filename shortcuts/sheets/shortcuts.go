@@ -45,5 +45,15 @@ func Shortcuts() []common.Shortcut {
 		CellsSetStyle,
 		CsvPut,
 		DropdownSet,
+
+		// lark_sheet_range_operations
+		CellsClear,
+		CellsMerge,
+		CellsUnmerge,
+		DimResize,
+		RangeMove,
+		RangeCopy,
+		RangeFill,
+		RangeSort,
 	}
 }
