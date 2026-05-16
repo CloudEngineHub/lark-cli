@@ -64,5 +64,14 @@ func Shortcuts() []common.Shortcut {
 		FilterViewList,
 		SparklineList,
 		FloatImageList,
+
+		// Object CRUD (3 per skill)
+		ChartCreate, ChartUpdate, ChartDelete,
+		PivotCreate, PivotUpdate, PivotDelete,
+		CondFormatCreate, CondFormatUpdate, CondFormatDelete,
+		FilterCreate, FilterUpdate, FilterDelete,
+		FilterViewCreate, FilterViewUpdate, FilterViewDelete,
+		SparklineCreate, SparklineUpdate, SparklineDelete,
+		FloatImageCreate, FloatImageUpdate, FloatImageDelete,
 	}
 }
