@@ -82,6 +82,7 @@
 | --- | --- | --- | --- |
 | `export_sheet_to_sandbox` | _Sheet Tool 独有，CLI 不实现_ | — | — |
 | `get_cell_ranges` | `+cells-get` | read | 单元格 |
+|  | `+dropdown-get` | read | 对象 |
 | `get_range_as_csv` | `+csv-get` | read | 单元格 |
 
 ## Flags
@@ -101,6 +102,15 @@
 | `--cell-limit` | 专有 | int + Hidden | 否 | 防爆，默认 5000 |
 | `--max-chars` | 专有 | int + Hidden | 否 | 防爆，默认 200000 |
 | `--skip-hidden` | 专有 | bool | 否 | 同上 |
+| `--dry-run` | 系统 | bool | 否 |  |
+
+### `+dropdown-get`
+
+| Flag | 分类 | Type | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
+| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
+| `--range` | 专有 | string | 是 | 目标范围 A1 格式（含 sheet 前缀，如 `sheet1!A2:A100`） |
 | `--dry-run` | 系统 | bool | 否 |  |
 
 ### `+csv-get`

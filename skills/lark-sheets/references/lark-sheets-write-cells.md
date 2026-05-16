@@ -173,10 +173,8 @@ set_cell_range — range="A11:H11", cells=[[
 | --- | --- | --- | --- |
 | `set_cell_range` | `+cells-set` | write | 单元格 |
 |  | `+cells-set-style` | write | 单元格 |
-|  | `+cells-batch-set-style` | write | 批量 |
 |  | `+cells-set-image` | write | 单元格 |
 |  | `+dropdown-set` | write | 对象 |
-|  | `+dropdown-get` | read | 对象 |
 |  | `+dropdown-update` | write | 对象 |
 |  | `+dropdown-delete` | high-risk-write | 对象 |
 | `set_range_from_csv` | `+csv-put` | write | 单元格 |
@@ -212,15 +210,6 @@ set_cell_range — range="A11:H11", cells=[[
 | `--style` | 专有 | string + File + Stdin | 是 | 样式 JSON：`{"font":{"bold":true},"backColor":"#fff","border_styles":{...}}`；只改样式，不动 value/formula（底层走 set_cell_range 的 cell_styles + border_styles 字段） |
 | `--dry-run` | 系统 | bool | 否 |  |
 
-### `+cells-batch-set-style`
-
-| Flag | 分类 | Type | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
-| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
-| `--data` | 专有 | string + File + Stdin | 是 | JSON 数组 `[{"ranges":["sheet1!A1:B2"],"style":{...}}]`；每个 ranges 元素必须带 sheet 前缀 |
-| `--dry-run` | 系统 | bool | 否 |  |
-
 ### `+cells-set-image`
 
 | Flag | 分类 | Type | 必填 | 说明 |
@@ -247,15 +236,6 @@ set_cell_range — range="A11:H11", cells=[[
 | `--colors` | 专有 | string + File + Stdin | 否 | RGB hex 颜色数组（如 `["#1FB6C1","#F006C2"]`），长度必须与 `--options` 一致 |
 | `--multiple` | 专有 | bool | 否 | 启用多选；默认 `false` |
 | `--highlight` | 专有 | bool | 否 | 选项配色显示；默认 `false` |
-| `--dry-run` | 系统 | bool | 否 |  |
-
-### `+dropdown-get`
-
-| Flag | 分类 | Type | 必填 | 说明 |
-| --- | --- | --- | --- | --- |
-| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
-| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
-| `--range` | 专有 | string | 是 | 目标范围 A1 格式（含 sheet 前缀，如 `sheet1!A2:A100`） |
 | `--dry-run` | 系统 | bool | 否 |  |
 
 ### `+dropdown-update`
@@ -311,7 +291,7 @@ set_cell_range — range="A11:H11", cells=[[
 - `rich_text` (array<object>?) — 富文本内容 each: { attachment_name?: string, attachment_token?: string, attachment_uri?: string, file_size?: number, image_height?: number, …共 17 项 }
 - `value` (oneOf?) — 静态单元格值（文本、数字、布尔）
 
-### `+cells-set-style` `--style` / `+cells-batch-set-style` `--data`
+### `+cells-set-style` `--style`
 
 _单元格样式属性，包括字体、颜色、对齐方式和数字格式_
 

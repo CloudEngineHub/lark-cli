@@ -27,6 +27,7 @@
 | MCP tool | CLI shortcut | Risk | 分组 |
 | --- | --- | --- | --- |
 | `batch_update` | `+batch-update` | high-risk-write | 批量 |
+|  | `+cells-batch-set-style` | write | 批量 |
 
 ## Flags
 
@@ -42,6 +43,15 @@
 | `--yes` | 系统 | bool | 是 | `high-risk-write`，必须二次确认（不带时退出码 10） |
 | `--dry-run` | 系统 | bool | 否 | 输出每个子操作的请求模板，零网络副作用 |
 
+### `+cells-batch-set-style`
+
+| Flag | 分类 | Type | 必填 | 说明 |
+| --- | --- | --- | --- | --- |
+| `--url` | 公共 | string | XOR | spreadsheet URL（与 `--spreadsheet-token` 二选一） |
+| `--spreadsheet-token` | 公共 | string | XOR | spreadsheet token（与 `--url` 二选一） |
+| `--data` | 专有 | string + File + Stdin | 是 | JSON 数组 `[{"ranges":["sheet1!A1:B2"],"style":{...}}]`；每个 ranges 元素必须带 sheet 前缀 |
+| `--dry-run` | 系统 | bool | 否 |  |
+
 ## Schemas
 
 > 复合 JSON flag（`--data` / `--style` / `--options` / `--sort-keys`）的字段速查：只列顶层字段 + 一层嵌套结构。深层结构看 `## Examples` 段的真实示例；要拿完整 JSON Schema 跑 `lark-cli sheets <shortcut> --print-schema --flag <name>`（runtime introspection，待落地）。
@@ -53,6 +63,22 @@ _要批量执行的操作列表，按顺序依次执行_
 **数组项**（类型 object）：
 - `input` (object) — 对应工具的入参，结构与单独调用该工具时完全一致
 - `tool_name` (string) — 要执行的工具名称，如 "set_cell_range"、"clear_cell_range"、"modify_sheet_structure" 等
+
+### `+cells-batch-set-style` `--data`
+
+_单元格样式属性，包括字体、颜色、对齐方式和数字格式_
+
+**顶层字段**：
+- `background_color` (string?) — 背景颜色（十六进制，例如 "#ffffff"）
+- `font_color` (string?) — 字体颜色（十六进制，例如 "#000000"）
+- `font_line` (enum?) — 字体线条样式 [none / underline / line-through]
+- `font_size` (number?) — 字体大小（单位：px/像素，例如 10、12、14）
+- `font_style` (enum?) — 字体样式 [normal / italic]
+- `font_weight` (enum?) — 字重 [normal / bold]
+- `horizontal_alignment` (enum?) — 水平对齐方式 [left / center / right]
+- `number_format` (string?) — 数字格式（例如：文本用 "@"、数字用 "0.00"、货币用 "$#,##0.00"、日期用 "mm/dd/yyyy"）
+- `vertical_alignment` (enum?) — 垂直对齐方式 [top / middle / bottom]
+- `word_wrap` (enum?) — 是否自动换行，默认溢出，可选自动换行或裁剪 [overflow / auto-wrap / word-clip]
 
 ## Examples
 

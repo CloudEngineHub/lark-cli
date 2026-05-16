@@ -8,6 +8,7 @@
 package sheets
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/larksuite/cli/internal/validate"
@@ -117,4 +118,51 @@ func sheetSelectorPlaceholder(sheetID, sheetName string) string {
 		return sheetID
 	}
 	return "<resolve:" + sheetName + ">"
+}
+
+// parseJSONFlag parses a JSON string from a flag value. Returns nil when the
+// flag is empty (caller decides if that's acceptable). Used by --data /
+// --style / --options / --ranges / --colors and friends.
+func parseJSONFlag(runtime *common.RuntimeContext, name string) (interface{}, error) {
+	raw := strings.TrimSpace(runtime.Str(name))
+	if raw == "" {
+		return nil, nil
+	}
+	var out interface{}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		return nil, common.FlagErrorf("--%s: invalid JSON: %v", name, err)
+	}
+	return out, nil
+}
+
+// requireJSONObject is parseJSONFlag + a type assertion to map[string]interface{}.
+func requireJSONObject(runtime *common.RuntimeContext, name string) (map[string]interface{}, error) {
+	v, err := parseJSONFlag(runtime, name)
+	if err != nil {
+		return nil, err
+	}
+	if v == nil {
+		return nil, common.FlagErrorf("--%s is required", name)
+	}
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil, common.FlagErrorf("--%s must be a JSON object", name)
+	}
+	return m, nil
+}
+
+// requireJSONArray is parseJSONFlag + a type assertion to []interface{}.
+func requireJSONArray(runtime *common.RuntimeContext, name string) ([]interface{}, error) {
+	v, err := parseJSONFlag(runtime, name)
+	if err != nil {
+		return nil, err
+	}
+	if v == nil {
+		return nil, common.FlagErrorf("--%s is required", name)
+	}
+	a, ok := v.([]interface{})
+	if !ok {
+		return nil, common.FlagErrorf("--%s must be a JSON array", name)
+	}
+	return a, nil
 }

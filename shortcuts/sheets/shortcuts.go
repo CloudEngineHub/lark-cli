@@ -30,5 +30,22 @@ func Shortcuts() []common.Shortcut {
 		DimFreeze,
 		DimGroup,
 		DimUngroup,
+
+		// lark_sheet_read_data
+		CellsGet,
+		CsvGet,
+		DropdownGet,
+
+		// lark_sheet_search_replace
+		CellsSearch,
+		CellsReplace,
+
+		// lark_sheet_write_cells
+		CellsSet,
+		CellsSetStyle,
+		CsvPut,
+		DropdownSet,
+		DropdownUpdate,
+		DropdownDelete,
 	}
 }
