@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/spf13/cobra"
+
+	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/output"
-	"github.com/larksuite/cli/internal/policydecision"
-	"github.com/larksuite/cli/internal/pruning"
-	"github.com/spf13/cobra"
 )
 
 // pruneForStrictMode removes commands incompatible with the active strict mode.
@@ -52,7 +52,7 @@ func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Comma
 	// against platform.All() could intercept and silently swallow the
 	// strict-mode error -- breaking strict-mode's "hard boundary" contract.
 	//
-	// Args + PersistentPreRunE overrides mirror pruning/apply.go::installDenyStub:
+	// Args + PersistentPreRunE overrides mirror cmdpolicy/apply.go::installDenyStub:
 	//
 	//   - Args=ArbitraryArgs: with DisableFlagParsing the user's flags
 	//     look like positional args; the original child's Args validator
@@ -64,6 +64,21 @@ func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Comma
 	//     credentials are set. Cobra's "first wins walking up" would
 	//     pick auth's instead of our denial. A leaf-level no-op makes
 	//     cobra stop here and proceed to the wrapped RunE.
+	//
+	// strict-mode keeps its short Message + independent Hint and
+	// composes the shared detail.* / wrapped-CommandDeniedError shape
+	// by hand; BuildDenialError would override Message with the
+	// CommandDeniedError.Error() long form.
+	stubMessage := fmt.Sprintf(
+		"strict mode is %q, only %s-identity commands are available",
+		mode, mode.ForcedIdentity())
+	const stubHint = "if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)"
+	denial := cmdpolicy.Denial{
+		Layer:        cmdpolicy.LayerStrictMode,
+		PolicySource: "strict-mode",
+		ReasonCode:   "identity_not_supported",
+		Reason:       stubMessage,
+	}
 	return &cobra.Command{
 		Use:                child.Use,
 		Aliases:            append([]string(nil), child.Aliases...),
@@ -71,17 +86,25 @@ func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Comma
 		DisableFlagParsing: true,
 		Args:               cobra.ArbitraryArgs,
 		Annotations: map[string]string{
-			pruning.AnnotationDenialLayer:  policydecision.LayerStrictMode,
-			pruning.AnnotationDenialSource: "strict-mode",
+			cmdpolicy.AnnotationDenialLayer:  cmdpolicy.LayerStrictMode,
+			cmdpolicy.AnnotationDenialSource: "strict-mode",
 		},
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			c.SilenceUsage = true
 			return nil
 		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return output.ErrWithHint(output.ExitValidation, "command_denied",
-				fmt.Sprintf("strict mode is %q, only %s-identity commands are available", mode, mode.ForcedIdentity()),
-				"if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)")
+		RunE: func(c *cobra.Command, _ []string) error {
+			cd := cmdpolicy.CommandDeniedFromDenial(cmdpolicy.CanonicalPath(c), denial)
+			return &output.ExitError{
+				Code: output.ExitValidation,
+				Detail: &output.ErrDetail{
+					Type:    "command_denied",
+					Message: stubMessage,
+					Hint:    stubHint,
+					Detail:  cmdpolicy.DenialDetailMap(cd),
+				},
+				Err: cd,
+			}
 		},
 	}
 }

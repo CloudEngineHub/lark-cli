@@ -14,11 +14,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/larksuite/cli/extension/platform"
+	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/output"
-	"github.com/larksuite/cli/internal/platformhost"
-	"github.com/larksuite/cli/internal/pruning"
+	internalplatform "github.com/larksuite/cli/internal/platform"
 )
 
 // These integration tests exercise the Hook framework's plumbing
@@ -53,16 +53,16 @@ func (p *fakeIntegrationPlugin) Install(r platform.Registrar) error {
 		r.Restrict(p.rule)
 	}
 	r.Observe(platform.Before, "audit-pre", platform.All(),
-		func(context.Context, *platform.Invocation) {
+		func(context.Context, platform.Invocation) {
 			atomic.AddInt64(&p.beforeCount, 1)
 		})
 	r.Observe(platform.After, "audit-post", platform.All(),
-		func(context.Context, *platform.Invocation) {
+		func(context.Context, platform.Invocation) {
 			atomic.AddInt64(&p.afterCount, 1)
 		})
 	r.Wrap("policy", platform.ByWrite(),
 		func(next platform.Handler) platform.Handler {
-			return func(ctx context.Context, inv *platform.Invocation) error {
+			return func(ctx context.Context, inv platform.Invocation) error {
 				atomic.AddInt64(&p.wrapCount, 1)
 				if p.wrapDeniesWrite {
 					return &platform.AbortError{
@@ -97,7 +97,7 @@ func syntheticTree() (*cobra.Command, *cobra.Command) {
 }
 
 // End-to-end through the public install pipeline: register a plugin,
-// run platformhost.InstallAll (the same function buildInternal calls),
+// run internalplatform.InstallAll (the same function buildInternal calls),
 // wire hooks onto a synthetic tree, invoke the leaf, and confirm
 // observers fired.
 func TestPluginPipeline_observersWired(t *testing.T) {
@@ -109,7 +109,7 @@ func TestPluginPipeline_observersWired(t *testing.T) {
 	}
 	platform.Register(plugin)
 
-	result, err := platformhost.InstallAll(platform.RegisteredPlugins(), nil)
+	result, err := internalplatform.InstallAll(platform.RegisteredPlugins(), nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestPluginPipeline_wrapAbortReachesEnvelope(t *testing.T) {
 	}
 	platform.Register(plugin)
 
-	result, err := platformhost.InstallAll(platform.RegisteredPlugins(), nil)
+	result, err := internalplatform.InstallAll(platform.RegisteredPlugins(), nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestPluginPipeline_wrapAbortReachesEnvelope(t *testing.T) {
 // Plugin.Restrict() contribution must reach the pruning resolver and
 // take precedence over a yaml file (single-rule, plugin wins). This
 // goes through the REAL Build() pipeline so the wiring between
-// installPluginsAndHooks -> applyUserPolicyPruning -> pruning.Resolve
+// installPluginsAndHooks -> applyUserPolicyPruning -> cmdpolicy.Resolve
 // is covered.
 func TestPluginPipeline_restrictBeatsYaml(t *testing.T) {
 	cfgDir := tmpHome(t)
@@ -231,9 +231,6 @@ func TestPluginPipeline_denialGuardIntegrated(t *testing.T) {
 	t.Cleanup(platform.ResetForTesting)
 
 	wrapCalled := false
-	type wrapPlugin struct{}
-	// We use an anonymous Plugin via fakeIntegrationPlugin to keep
-	// the test focused.
 	plugin := &fakeIntegrationPlugin{
 		name:            "policy-plugin",
 		caps:            platform.Capabilities{FailurePolicy: platform.FailOpen},
@@ -251,20 +248,20 @@ func TestPluginPipeline_denialGuardIntegrated(t *testing.T) {
 	}
 	platform.Register(malicious)
 
-	result, err := platformhost.InstallAll(platform.RegisteredPlugins(), nil)
+	result, err := internalplatform.InstallAll(platform.RegisteredPlugins(), nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
 	}
 
 	root, leaf := syntheticTree()
-	// Simulate pruning.Apply marking leaf as denied.
+	// Simulate cmdpolicy.Apply marking leaf as denied.
 	leaf.Hidden = true
 	leaf.DisableFlagParsing = true
 	if leaf.Annotations == nil {
 		leaf.Annotations = map[string]string{}
 	}
-	leaf.Annotations["lark:pruning_denied_layer"] = "pruning"
-	leaf.Annotations["lark:pruning_denied_source"] = "plugin:other"
+	leaf.Annotations["lark:policy_denied_layer"] = "policy"
+	leaf.Annotations["lark:policy_denied_source"] = "plugin:other"
 	denyStubCalled := false
 	leaf.RunE = func(*cobra.Command, []string) error {
 		denyStubCalled = true
@@ -302,7 +299,7 @@ func (p *mockMaliciousPlugin) Capabilities() platform.Capabilities {
 func (p *mockMaliciousPlugin) Install(r platform.Registrar) error {
 	r.Wrap("hijack", platform.All(),
 		func(_ platform.Handler) platform.Handler {
-			return func(context.Context, *platform.Invocation) error {
+			return func(context.Context, platform.Invocation) error {
 				if p.invokedFlag != nil {
 					*p.invokedFlag = true
 				}
@@ -386,8 +383,8 @@ func TestPluginConflictGuard_MultipleRestrictAbortsCLI(t *testing.T) {
 	tmpHome(t)
 	platform.ResetForTesting()
 	t.Cleanup(platform.ResetForTesting)
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	rule := &platform.Rule{Name: "any", Allow: []string{"**"}}
 	platform.Register(&fakeIntegrationPlugin{
@@ -430,8 +427,8 @@ func TestPluginConflictGuard_InvalidRuleAbortsCLI(t *testing.T) {
 	tmpHome(t)
 	platform.ResetForTesting()
 	t.Cleanup(platform.ResetForTesting)
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	// MaxRisk "nukem" is rejected by ValidateRule -> Resolve returns
 	// an error that is NOT ErrMultipleRestricts.
@@ -472,8 +469,8 @@ func TestPluginLifecycleGuard_StartupErrorAbortsCLI(t *testing.T) {
 	tmpHome(t)
 	platform.ResetForTesting()
 	t.Cleanup(platform.ResetForTesting)
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	platform.Register(&startupFailingPlugin{
 		name:    "lc",
@@ -508,8 +505,8 @@ func TestPluginLifecycleGuard_StartupPanicAbortsCLI(t *testing.T) {
 	tmpHome(t)
 	platform.ResetForTesting()
 	t.Cleanup(platform.ResetForTesting)
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	platform.Register(&startupFailingPlugin{
 		name:     "lc",
@@ -566,7 +563,7 @@ func TestWrapperPanic_BecomesHookPanicEnvelope(t *testing.T) {
 
 	platform.Register(&panickingWrapPlugin{name: "p"})
 
-	result, err := platformhost.InstallAll(platform.RegisteredPlugins(), nil)
+	result, err := internalplatform.InstallAll(platform.RegisteredPlugins(), nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
 	}
@@ -606,7 +603,7 @@ func (p *panickingWrapPlugin) Capabilities() platform.Capabilities { return plat
 func (p *panickingWrapPlugin) Install(r platform.Registrar) error {
 	r.Wrap("boom", platform.All(),
 		func(_ platform.Handler) platform.Handler {
-			return func(context.Context, *platform.Invocation) error {
+			return func(context.Context, platform.Invocation) error {
 				panic("intentional panic for test")
 			}
 		})
@@ -640,7 +637,7 @@ func TestWrapperFactoryPanic_BecomesHookPanicEnvelope(t *testing.T) {
 
 	platform.Register(&factoryPanicWrapPlugin{name: "fac"})
 
-	result, err := platformhost.InstallAll(platform.RegisteredPlugins(), nil)
+	result, err := internalplatform.InstallAll(platform.RegisteredPlugins(), nil)
 	if err != nil {
 		t.Fatalf("InstallAll: %v", err)
 	}

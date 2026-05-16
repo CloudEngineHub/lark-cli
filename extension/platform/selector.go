@@ -47,7 +47,7 @@ func ByCommandPath(patterns ...string) Selector {
 
 // ByIdentity matches when the command's supported identities include
 // the supplied id. Unknown identities never match.
-func ByIdentity(id string) Selector {
+func ByIdentity(id Identity) Selector {
 	return func(cmd CommandView) bool {
 		for _, x := range cmd.Identities() {
 			if x == id {
@@ -61,9 +61,10 @@ func ByIdentity(id string) Selector {
 // Risk-based selectors below match only commands whose declared risk
 // equals the selector's target level. The closed taxonomy is read /
 // write / high-risk-write — there is no "unknown" branch in the public
-// API. When any pruning Rule is registered, the pruning engine treats
-// unannotated commands as implicit deny, so risk-based selectors never
-// see them in hook dispatch.
+// API. When a Rule without AllowUnannotated=true is registered, the
+// policy engine treats unannotated commands as implicit deny, so risk-
+// based selectors never see them in hook dispatch under that
+// configuration.
 
 // ByExactRisk matches commands whose declared risk level is exactly level.
 func ByExactRisk(level Risk) Selector {
@@ -114,7 +115,8 @@ func (s Selector) Or(other Selector) Selector {
 	}
 }
 
-// Not negates the selector.
+// Not negates the selector. A nil receiver is treated as None(), so
+// nil.Not() behaves as All().
 func (s Selector) Not() Selector {
 	inner := normalize(s)
 	return func(cmd CommandView) bool {

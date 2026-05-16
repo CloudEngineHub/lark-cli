@@ -18,10 +18,16 @@ type fakeView struct {
 	identities []string
 }
 
-func (v fakeView) Path() string                         { return v.path }
-func (v fakeView) Domain() string                       { return v.domain }
-func (v fakeView) Risk() (string, bool)                 { return v.risk, v.riskOK }
-func (v fakeView) Identities() []string                 { return v.identities }
+func (v fakeView) Path() string                { return v.path }
+func (v fakeView) Domain() string              { return v.domain }
+func (v fakeView) Risk() (platform.Risk, bool) { return platform.Risk(v.risk), v.riskOK }
+func (v fakeView) Identities() []platform.Identity {
+	out := make([]platform.Identity, len(v.identities))
+	for i, x := range v.identities {
+		out[i] = platform.Identity(x)
+	}
+	return out
+}
 func (v fakeView) Annotation(key string) (string, bool) { return "", false }
 
 func TestAll_None(t *testing.T) {
@@ -50,8 +56,8 @@ func TestByDomain(t *testing.T) {
 
 // Risk-based selectors match only against the closed taxonomy
 // (read / write / high-risk-write). Commands without a risk annotation
-// never match; the pruning engine guarantees such commands cannot reach
-// hook dispatch when any Rule is registered.
+// never match; the policy engine guarantees such commands cannot reach
+// hook dispatch when a Rule without AllowUnannotated=true is registered.
 func TestByExactRisk_unknownDoesNotMatch(t *testing.T) {
 	sel := platform.ByExactRisk("write")
 	if !sel(fakeView{risk: "write", riskOK: true}) {

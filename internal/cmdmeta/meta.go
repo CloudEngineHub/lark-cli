@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 // Package cmdmeta is the single source of truth for command metadata that the
-// pruning engine and (later) the hook selector both consume. It wraps the
-// existing cmdutil annotations (risk_level, supportedIdentities) and adds the
+// policy engine and the hook selector both consume. It wraps the existing
+// cmdutil annotations (risk_level, supportedIdentities) and adds the
 // "domain" axis that the hook selector and Rule path globs need.
 //
 // Three axes:
@@ -21,10 +21,11 @@
 //     GetSupportedIdentities.
 //
 // Missing values are returned as the zero value with ok=false (where the
-// signature exposes it). Interpretation is up to the consumer: the pruning
+// signature exposes it). Interpretation is up to the consumer: the policy
 // engine treats a missing risk as fail-closed when a Rule is registered
-// and as allow when no Rule is registered. Identities still defaults to
-// ALLOW. Do not synthesise defaults here -- let each consumer decide.
+// without AllowUnannotated=true, and as allow otherwise. Identities still
+// defaults to ALLOW. Do not synthesise defaults here -- let each consumer
+// decide.
 package cmdmeta
 
 import (
@@ -38,8 +39,8 @@ import (
 // disturbing existing readers.
 const domainAnnotationKey = "cmdmeta.domain"
 
-// Meta groups the three command-level metadata axes consumed by pruning and
-// hook selectors.
+// Meta groups the three command-level metadata axes consumed by the policy
+// engine and hook selectors.
 type Meta struct {
 	Domain     string
 	Risk       string
@@ -94,7 +95,7 @@ func SetDomain(cmd *cobra.Command, domain string) {
 
 // Domain returns the nearest-ancestor domain for the command. Empty string
 // when no ancestor has the annotation -- this is the "unknown" state the
-// pruning engine must treat as ALLOW.
+// policy engine must treat as ALLOW.
 func Domain(cmd *cobra.Command) string {
 	for c := cmd; c != nil; c = c.Parent() {
 		if c.Annotations == nil {
@@ -108,9 +109,9 @@ func Domain(cmd *cobra.Command) string {
 }
 
 // Risk returns the nearest-ancestor risk level (via cmdutil.GetRisk).
-// ok=false signals "unknown" -- the pruning engine treats this as
-// fail-closed (deny with risk_not_annotated) whenever a Rule is active,
-// and as allow when no Rule is registered.
+// ok=false signals "unknown" -- the policy engine treats this as
+// fail-closed (deny with risk_not_annotated) whenever a Rule without
+// AllowUnannotated=true is active, and as allow otherwise.
 func Risk(cmd *cobra.Command) (level string, ok bool) {
 	for c := cmd; c != nil; c = c.Parent() {
 		if level, ok = cmdutil.GetRisk(c); ok {
@@ -121,7 +122,8 @@ func Risk(cmd *cobra.Command) (level string, ok bool) {
 }
 
 // Identities returns the first non-nil identity set found while walking up
-// the parent chain. nil signals "unknown" -- pruning treats this as ALLOW.
+// the parent chain. nil signals "unknown" -- the policy engine treats this
+// as ALLOW.
 //
 // cmdutil.GetSupportedIdentities returns nil when the annotation is absent
 // or empty; an explicit non-empty set (even ["user"] alone) stops the walk.

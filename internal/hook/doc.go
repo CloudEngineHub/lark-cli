@@ -15,6 +15,6 @@
 //
 // Plugins NEVER import this package -- they only ever see
 // extension/platform. The Registrar contract is implemented inside
-// internal/platformhost, which delegates to this Registry after
-// validating the plugin's calls (staging + atomic commit).
+// internal/platform, which delegates to this Registry after validating
+// the plugin's calls (staging + atomic commit).
 package hook

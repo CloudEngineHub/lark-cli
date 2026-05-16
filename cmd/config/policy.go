@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/larksuite/cli/internal/cmdpolicy"
+	pyaml "github.com/larksuite/cli/internal/cmdpolicy/yaml"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/output"
-	"github.com/larksuite/cli/internal/pruning"
-	pyaml "github.com/larksuite/cli/internal/pruning/yaml"
 )
 
 // NewCmdConfigPolicy returns the `config policy` group. Subcommands:
@@ -65,13 +65,13 @@ marked as denied after father-group aggregation.`,
 }
 
 func runConfigPolicyShow(f *cmdutil.Factory) error {
-	active := pruning.GetActive()
+	active := cmdpolicy.GetActive()
 	if active == nil {
 		// Bootstrap not yet recorded -- happens when the command is
 		// invoked from a context that bypassed buildInternal (only test
 		// shells should hit this).
 		output.PrintJson(f.IOStreams.Out, map[string]any{
-			"source": string(pruning.SourceNone),
+			"source": string(cmdpolicy.SourceNone),
 			"note":   "no policy recorded; bootstrap did not run pruning",
 		})
 		return nil
@@ -85,17 +85,18 @@ func runConfigPolicyShow(f *cmdutil.Factory) error {
 	}
 	if active.Rule != nil {
 		out["rule"] = map[string]any{
-			"name":        active.Rule.Name,
-			"description": active.Rule.Description,
-			"allow":       active.Rule.Allow,
-			"deny":        active.Rule.Deny,
-			"max_risk":    active.Rule.MaxRisk,
-			"identities":  active.Rule.Identities,
+			"name":              active.Rule.Name,
+			"description":       active.Rule.Description,
+			"allow":             active.Rule.Allow,
+			"deny":              active.Rule.Deny,
+			"max_risk":          active.Rule.MaxRisk,
+			"identities":        active.Rule.Identities,
+			"allow_unannotated": active.Rule.AllowUnannotated,
 		}
 	}
 	// Surface the yaml-shadowed case so a user wondering "why is my
 	// yaml ignored?" sees it immediately.
-	if active.Source.Kind == pruning.SourcePlugin && active.YAMLPath != "" {
+	if active.Source.Kind == cmdpolicy.SourcePlugin && active.YAMLPath != "" {
 		if _, err := os.Stat(active.YAMLPath); err == nil {
 			out["yaml_shadowed"] = true
 			fmt.Fprintln(f.IOStreams.ErrOut,
@@ -129,17 +130,18 @@ func runConfigPolicyValidate(f *cmdutil.Factory, path string) error {
 		return output.Errorf(output.ExitValidation, "validation",
 			"parse policy yaml %q: %v", path, err)
 	}
-	if err := pruning.ValidateRule(rule); err != nil {
+	if err := cmdpolicy.ValidateRule(rule); err != nil {
 		return output.Errorf(output.ExitValidation, "validation",
 			"invalid rule in %q: %v", path, err)
 	}
 	output.PrintJson(f.IOStreams.Out, map[string]any{
-		"ok":        true,
-		"path":      path,
-		"rule_name": rule.Name,
-		"allow":     rule.Allow,
-		"deny":      rule.Deny,
-		"max_risk":  rule.MaxRisk,
+		"ok":                true,
+		"path":              path,
+		"rule_name":         rule.Name,
+		"allow":             rule.Allow,
+		"deny":              rule.Deny,
+		"max_risk":          rule.MaxRisk,
+		"allow_unannotated": rule.AllowUnannotated,
 	})
 	return nil
 }

@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,15 +34,14 @@ import (
 //     error. Wrap short-circuits via AbortError get converted to
 //     *output.ExitError so cmd/root.go emits the right envelope.
 //
-//   - **Identity is resolved by the time After observers run.** The
-//     framework calls invocation.InternalSetIdentity from inside the
-//     wrapper as soon as the command runner resolves it (today the
-//     wrapper does not have access to identity resolution, so this is
-//     stubbed to "" / false for V1 -- future PR will plumb it).
+//   - **Denial layer / source are populated from cobra annotations
+//     before any hook fires.** populateInvocationDenial reads the
+//     annotations attached by cmdpolicy.Apply and strictModeStubFrom,
+//     avoiding an import cycle between hook and cmdpolicy.
 //
 // Install must be called once during the Bootstrap pipeline after
-// pruning has finished. Calling it twice on the same tree is a bug
-// (each command's RunE would be wrapped multiple times).
+// policy pruning has finished. Calling it twice on the same tree is a
+// bug (each command's RunE would be wrapped multiple times).
 func Install(root *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 	if root == nil || reg == nil {
 		return
@@ -82,19 +80,15 @@ func wrapRunE(cmd *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 
 	cmd.RunE = func(c *cobra.Command, args []string) error {
 		view := snapshot.View(c)
-		inv := &platform.Invocation{
-			Cmd:     view,
-			Args:    args,
-			Started: time.Now(),
-		}
+		inv := newInvocation(view, args)
 
 		// Detect denial: a denied command's original RunE was already
-		// replaced by pruning.Apply with a denyStub that returns
+		// replaced by cmdpolicy.Apply with a denyStub that returns
 		// *output.ExitError wrapping *platform.CommandDeniedError. We
 		// invoke originalRunE once with a probe-only context (no args
 		// matter because DisableFlagParsing is set on denied commands)
 		// to extract its CommandDeniedError, but for V1 we use a
-		// simpler shortcut: pruning.Apply itself marks the command
+		// simpler shortcut: cmdpolicy.Apply itself marks the command
 		// via cobra annotation; install reads the annotation directly.
 		populateInvocationDenial(inv, c)
 
@@ -110,7 +104,7 @@ func wrapRunE(cmd *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 
 		// === Denial guard ===
 		// If denied, run the originalRunE directly (it is the denyStub
-		// installed by pruning.Apply). The Wrap chain is bypassed.
+		// installed by cmdpolicy.Apply). The Wrap chain is bypassed.
 		var err error
 		if inv.DeniedByPolicy() {
 			err = invokeOriginal(ctx, c, args, originalRunE, originalRun)
@@ -132,8 +126,11 @@ func wrapRunE(cmd *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 				wrappers = append(wrappers, recoverWrap(w.Name, namespacedWrap(w.Name, w.Fn)))
 			}
 			composed := ComposeWrappers(wrappers)
-			finalHandler := composed(func(c2 context.Context, i *platform.Invocation) error {
-				return invokeOriginal(c2, c, i.Args, originalRunE, originalRun)
+			// Pass the wrapRunE-local args, not i.Args(): the original
+			// RunE must see what cobra parsed, not what a hook may have
+			// observed via the read-only interface.
+			finalHandler := composed(func(c2 context.Context, _ platform.Invocation) error {
+				return invokeOriginal(c2, c, args, originalRunE, originalRun)
 			})
 			err = finalHandler(ctx, inv)
 		}
@@ -142,7 +139,7 @@ func wrapRunE(cmd *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 		// renders the structured "hook" type.
 		err = wrapAbortError(err)
 
-		inv.Err = err
+		inv.setErr(err)
 
 		// === After observers (panic-safe, always run, including
 		// when err != nil) ===
@@ -172,7 +169,7 @@ func invokeOriginal(ctx context.Context, c *cobra.Command, args []string, runE f
 // runObserverSafe invokes an Observer with panic recovery. Observers
 // must not break the main flow; their job is side-effect-only and a
 // broken plugin should not cascade into a failed CLI run.
-func runObserverSafe(ctx context.Context, obs ObserverEntry, inv *platform.Invocation) {
+func runObserverSafe(ctx context.Context, obs ObserverEntry, inv platform.Invocation) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintf(stderr(), "warning: hook %q panicked: %v\n", obs.Name, r)
@@ -245,7 +242,7 @@ func wrapAbortError(err error) error {
 // reset on every command dispatch.
 func recoverWrap(fullName string, w platform.Wrapper) platform.Wrapper {
 	return func(next platform.Handler) platform.Handler {
-		return func(ctx context.Context, inv *platform.Invocation) (returned error) {
+		return func(ctx context.Context, inv platform.Invocation) (returned error) {
 			defer func() {
 				if r := recover(); r != nil {
 					returned = &output.ExitError{
@@ -293,7 +290,7 @@ func recoverWrap(fullName string, w platform.Wrapper) platform.Wrapper {
 func namespacedWrap(fullName string, w platform.Wrapper) platform.Wrapper {
 	return func(next platform.Handler) platform.Handler {
 		inner := w(next)
-		return func(ctx context.Context, inv *platform.Invocation) error {
+		return func(ctx context.Context, inv platform.Invocation) error {
 			err := inner(ctx, inv)
 			if err == nil {
 				return nil
@@ -317,22 +314,21 @@ var stderr = func() interface{ Write(p []byte) (int, error) } {
 	return defaultStderr
 }
 
-// PopulateInvocationDenial is exported for tests so they can simulate
-// the denial signal without a full pruning pipeline. Production code
-// goes through populateInvocationDenial which reads the cobra
-// annotation set by pruning.Apply.
+// populateInvocationDenial reads the cobra annotation set by
+// cmdpolicy.Apply and propagates it onto the framework-internal
+// invocation.
 //
 // V1 contract: a denial is signalled by the cobra annotation
-// "lark:pruning_denied_layer" being set on the command. The layer
-// value is the enforcement layer ("pruning" / "strict_mode") that
+// "lark:policy_denied_layer" being set on the command. The layer
+// value is the enforcement layer ("policy" / "strict_mode") that
 // gets emitted as detail.layer in the envelope; the source follows
-// the annotation "lark:pruning_denied_source".
+// the annotation "lark:policy_denied_source".
 //
 // This indirection lets us avoid an import cycle between hook and
 // pruning packages.
-func populateInvocationDenial(inv *platform.Invocation, c *cobra.Command) {
-	const layerKey = "lark:pruning_denied_layer"
-	const sourceKey = "lark:pruning_denied_source"
+func populateInvocationDenial(inv *invocation, c *cobra.Command) {
+	const layerKey = "lark:policy_denied_layer"
+	const sourceKey = "lark:policy_denied_source"
 	if c.Annotations == nil {
 		return
 	}
@@ -341,5 +337,5 @@ func populateInvocationDenial(inv *platform.Invocation, c *cobra.Command) {
 		return
 	}
 	source := c.Annotations[sourceKey]
-	inv.InternalSetDenial(true, layer, source)
+	inv.setDenial(layer, source)
 }

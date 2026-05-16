@@ -39,7 +39,7 @@ type LifecycleEntry struct {
 // Registry holds all registered hooks. The framework constructs one
 // Registry per binary execution; concurrent reads after Install
 // commits are safe because the maps are not mutated thereafter. Writes
-// (during Install) are serialised by the platformhost.
+// (during Install) are serialised by the internalplatform.
 type Registry struct {
 	mu sync.RWMutex
 
@@ -178,7 +178,7 @@ func ComposeWrappers(ws []platform.Wrapper) platform.Wrapper {
 // Wrappers for a command -- callers can always compose into
 // next(ctx, inv) without a nil check.
 func identityWrapper(next platform.Handler) platform.Handler {
-	return func(ctx context.Context, inv *platform.Invocation) error {
+	return func(ctx context.Context, inv platform.Invocation) error {
 		return next(ctx, inv)
 	}
 }

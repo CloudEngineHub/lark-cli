@@ -97,7 +97,7 @@ func TestGet_nearestAncestorWins(t *testing.T) {
 	}
 }
 
-// Unknown axes return zero / nil so the pruning engine can apply the
+// Unknown axes return zero / nil so the policy engine can apply the
 // "unknown => ALLOW" contract.
 func TestGet_unknownReturnsZero(t *testing.T) {
 	cmd := &cobra.Command{Use: "orphan"}

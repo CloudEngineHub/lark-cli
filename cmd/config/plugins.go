@@ -8,21 +8,20 @@ import (
 
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/output"
-	"github.com/larksuite/cli/internal/plugininventory"
+	internalplatform "github.com/larksuite/cli/internal/platform"
 )
 
 // NewCmdConfigPlugins exposes the plugin inventory diagnostic command.
 //
 // `config policy show` is intentionally focused on the user-layer Rule
 // (Restrict). Plugins also contribute hooks (Observe / Wrap / Lifecycle)
-// that are not policy in the pruning sense but still mutate the CLI's
-// runtime behaviour. This command surfaces both halves so an operator
-// can answer "what is this binary doing differently from stock lark-cli?"
-// in one place.
+// that are not policy gates but still mutate the CLI's runtime behaviour.
+// This command surfaces both halves so an operator can answer "what is
+// this binary doing differently from stock lark-cli?" in one place.
 //
-// Like config policy show, the dispatch path is exempt from pruning
-// (see internal/pruning/diagnostic.go) so it remains usable under any
-// Rule.
+// Like config policy show, the dispatch path is exempt from policy
+// enforcement (see internal/cmdpolicy/diagnostic.go) so it remains
+// usable under any Rule.
 func NewCmdConfigPlugins(f *cmdutil.Factory) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:    "plugins",
@@ -60,7 +59,7 @@ the plugin name as the prefix at registration time, so an entry
 }
 
 func runConfigPluginsShow(f *cmdutil.Factory) error {
-	inv := plugininventory.GetActive()
+	inv := internalplatform.GetActiveInventory()
 	if inv == nil {
 		output.PrintJson(f.IOStreams.Out, map[string]any{
 			"plugins": []any{},

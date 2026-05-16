@@ -14,7 +14,7 @@ import "fmt"
 // Layer values:
 //
 //   - "strict_mode" -- credential strict-mode rejected the command
-//   - "pruning"     -- user-layer Rule rejected the command
+//   - "policy"      -- user-layer Rule rejected the command
 //
 // PolicySource is a free-form identifier such as "plugin:secaudit",
 // "yaml:mywork", or "strict-mode". Reason fields:

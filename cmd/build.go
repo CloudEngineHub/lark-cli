@@ -19,10 +19,10 @@ import (
 	cmdupdate "github.com/larksuite/cli/cmd/update"
 	_ "github.com/larksuite/cli/events"
 	"github.com/larksuite/cli/internal/build"
+	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/hook"
 	"github.com/larksuite/cli/internal/keychain"
-	"github.com/larksuite/cli/internal/pruning"
 	"github.com/larksuite/cli/shortcuts"
 	"github.com/spf13/cobra"
 )
@@ -155,7 +155,7 @@ func buildInternal(ctx context.Context, inv cmdutil.InvocationContext, opts ...B
 		// proceed normally, which it isn't.
 		return f, rootCmd, nil
 	}
-	var pluginRules []pruning.PluginRule
+	var pluginRules []cmdpolicy.PluginRule
 	var registry *hook.Registry
 	if installResult != nil {
 		pluginRules = installResult.PluginRules

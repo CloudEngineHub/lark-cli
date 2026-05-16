@@ -27,13 +27,6 @@ func RegisteredPlugins() []Plugin {
 	return pluginRegistry.snapshot()
 }
 
-// ResetForTesting clears the registry. Test code uses this to isolate
-// test cases that register plugins. It is exported to test packages
-// only by convention; production code never calls it.
-func ResetForTesting() {
-	pluginRegistry.reset()
-}
-
 // pluginRegistry is the package-level singleton. The mutex protects
 // concurrent Register calls -- harmless in practice (init runs
 // serially) but cheap insurance.

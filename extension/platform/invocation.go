@@ -5,106 +5,68 @@ package platform
 
 import "time"
 
-// Invocation carries the per-command context a Wrapper or Observer needs.
-// Cmd is the read-only snapshot taken before any RunE replacement (see
-// CommandView); Args is the actual user input; Started is when the
-// outermost RunE wrapper began. Err is populated for After hooks and
-// the post-next portion of a Wrapper.
+// Invocation is the per-command data a Wrapper / Observer receives. It
+// is a read-only interface: the framework implementation lives in
+// internal/hook and is never visible to plugins, so there is no way
+// for plugin code to mutate denial / strict-mode / identity state.
 //
-// The struct is deliberately NOT a context.Context -- it is data only,
-// no cancellation. ctx (from the function signature) is the
-// context.Context for cancellation/timeout/trace propagation.
+// The struct is deliberately NOT a context.Context — it is data only,
+// no cancellation. ctx (from the handler signature) carries
+// cancellation / timeout / trace propagation.
 //
-// Implementation note: the lazy fields (DeniedByPolicy, Identity, etc.)
-// are populated by the framework before any hook fires. Plugins must
-// not depend on these being non-zero at construction; they always read
-// through the accessor methods which centralise the "is this populated
-// yet?" logic.
-type Invocation struct {
-	Cmd     CommandView
-	Args    []string
-	Started time.Time
-	Err     error
-
-	// Unexported state populated by the framework. Plugins read it via
-	// the methods below; direct field access is impossible.
-	deniedByPolicy bool
-	denialLayer    string // "strict_mode" / "pruning" / ""
-	denialSource   string // "plugin:secaudit" / "yaml" / "strict-mode" / ""
-
-	// strictMode is the resolved credential strict-mode value, or
-	// the empty string when no strict-mode is active. We do not use
-	// a separate "resolved?" bool: the StrictMode() accessor returns
-	// ok=false when the lifecycle has not yet resolved this.
-	strictMode      string
-	strictModeKnown bool
-
-	identity         string
-	identityResolved bool
-}
-
-// DeniedByPolicy reports whether the command was rejected by either
-// strict-mode or user-layer pruning before the chain reached the
-// hook. Observers fire even for denied commands (audit case); Wrap is
-// physically isolated by the framework so plugins do not need to check
-// this themselves before calling next.
-func (inv *Invocation) DeniedByPolicy() bool { return inv.deniedByPolicy }
-
-// DenialLayer returns the layer that rejected the command:
+// Accessor semantics:
 //
-//	""             - not denied
-//	"strict_mode"  - credential strict-mode
-//	"pruning"      - user-layer Rule (Plugin.Restrict() or yaml)
-//
-// Matches the error.type field in the envelope so consumers can route
-// recovery logic by this value alone.
-func (inv *Invocation) DenialLayer() string { return inv.denialLayer }
+//   - Cmd / Args / Started are populated before the first hook fires
+//   - Err is populated for After observers and the post-next portion of
+//     a Wrapper (the value the wrapped handler returned)
+//   - DeniedByPolicy / DenialLayer / DenialPolicySource are populated by
+//     the framework's denial guard before any hook runs
+//   - StrictMode / Identity may return ok=false in Before observers if
+//     the bootstrap pipeline has not yet resolved them; After observers
+//     always see ok=true
+type Invocation interface {
+	// Cmd is the read-only snapshot of the dispatched command.
+	Cmd() CommandView
 
-// DenialPolicySource returns the specific source identifier
-// ("plugin:secaudit", "yaml", "strict-mode") corresponding to the
-// denial. Empty when the command was not denied.
-func (inv *Invocation) DenialPolicySource() string { return inv.denialSource }
+	// Args is the positional args slice the user invoked the command with.
+	Args() []string
 
-// StrictMode returns the active credential strict-mode value
-// ("user", "bot", "off"). ok=false signals "not yet resolved" -- the
-// Bootstrap pipeline resolves strict-mode before any hook fires, so in
-// practice hooks always see ok=true; the bool exists to keep this
-// safe under future reordering.
-func (inv *Invocation) StrictMode() (mode string, ok bool) {
-	return inv.strictMode, inv.strictModeKnown
-}
+	// Started is the wall-clock time the outermost RunE wrapper began.
+	Started() time.Time
 
-// Identity returns the resolved identity ("user"/"bot") for the
-// current command. resolved=false means the framework has not yet
-// resolved identity at the call site (Before observers and Wrap entry
-// may see this; After observers always see resolved=true).
-func (inv *Invocation) Identity() (id string, resolved bool) {
-	return inv.identity, inv.identityResolved
-}
+	// Err is the error the wrapped handler returned. Populated for
+	// After observers and the post-next portion of a Wrapper. nil
+	// before the handler runs.
+	Err() error
 
-// --- internal setters (lower-case, package-internal) ---
-//
-// Public callers cannot mutate these fields; the framework uses
-// targeted helpers exposed only to internal/hook.
+	// DeniedByPolicy reports whether the command was rejected by either
+	// strict-mode or user-layer policy before the chain reached the
+	// hook. Observers fire even for denied commands (audit case); Wrap
+	// is physically isolated by the framework so plugins do not need
+	// to check this themselves before calling next.
+	DeniedByPolicy() bool
 
-// SetDenial is called by the framework before the hook chain runs.
-// Exported with "Internal" prefix to mark "framework-only" intent; it
-// is technically importable but lives outside the contract surface.
-// Renaming or removing it is not a breaking change.
-func (inv *Invocation) InternalSetDenial(deniedByPolicy bool, layer, source string) {
-	inv.deniedByPolicy = deniedByPolicy
-	inv.denialLayer = layer
-	inv.denialSource = source
-}
+	// DenialLayer returns the layer that rejected the command:
+	//
+	//   ""             - not denied
+	//   "strict_mode"  - credential strict-mode
+	//   "policy"       - user-layer Rule (Plugin.Restrict() or yaml)
+	//
+	// Matches the detail.layer field in the envelope so consumers can
+	// route recovery logic by this value alone.
+	DenialLayer() string
 
-// InternalSetStrictMode populates the strict-mode accessor.
-func (inv *Invocation) InternalSetStrictMode(mode string, known bool) {
-	inv.strictMode = mode
-	inv.strictModeKnown = known
-}
+	// DenialPolicySource returns the specific source identifier
+	// ("plugin:secaudit", "yaml", "strict-mode") corresponding to the
+	// denial. Empty when the command was not denied.
+	DenialPolicySource() string
 
-// InternalSetIdentity populates the identity accessor.
-func (inv *Invocation) InternalSetIdentity(id string, resolved bool) {
-	inv.identity = id
-	inv.identityResolved = resolved
+	// StrictMode returns the active credential strict-mode value
+	// ("user", "bot", "off"). ok=false signals "not yet resolved".
+	StrictMode() (mode string, ok bool)
+
+	// Identity returns the resolved identity ("user"/"bot") for the
+	// current command. resolved=false means the framework has not yet
+	// resolved identity at the call site.
+	Identity() (id string, resolved bool)
 }

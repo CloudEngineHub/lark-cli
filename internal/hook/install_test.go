@@ -30,8 +30,8 @@ type fakeView struct {
 
 func (v fakeView) Path() string                     { return v.path }
 func (v fakeView) Domain() string                   { return "" }
-func (v fakeView) Risk() (string, bool)             { return v.risk, v.risk != "" }
-func (v fakeView) Identities() []string             { return nil }
+func (v fakeView) Risk() (platform.Risk, bool)      { return platform.Risk(v.risk), v.risk != "" }
+func (v fakeView) Identities() []platform.Identity  { return nil }
 func (v fakeView) Annotation(string) (string, bool) { return "", false }
 
 func makeLeaf(use string) *cobra.Command {
@@ -53,14 +53,14 @@ func TestInstall_observersBeforeAndAfterAlwaysRun(t *testing.T) {
 	var seen []string
 	reg.AddObserver(hook.ObserverEntry{
 		Name: "before", When: platform.Before, Selector: platform.All(),
-		Fn: func(_ context.Context, inv *platform.Invocation) {
-			seen = append(seen, fmt.Sprintf("before:err=%v", inv.Err))
+		Fn: func(_ context.Context, inv platform.Invocation) {
+			seen = append(seen, fmt.Sprintf("before:err=%v", inv.Err()))
 		},
 	})
 	reg.AddObserver(hook.ObserverEntry{
 		Name: "after", When: platform.After, Selector: platform.All(),
-		Fn: func(_ context.Context, inv *platform.Invocation) {
-			seen = append(seen, fmt.Sprintf("after:err=%v", inv.Err))
+		Fn: func(_ context.Context, inv platform.Invocation) {
+			seen = append(seen, fmt.Sprintf("after:err=%v", inv.Err()))
 		},
 	})
 
@@ -94,7 +94,7 @@ func TestInstall_wrapperChainOrder(t *testing.T) {
 	reg.AddWrapper(hook.WrapperEntry{
 		Name: "outer", Selector: platform.All(),
 		Fn: func(next platform.Handler) platform.Handler {
-			return func(ctx context.Context, inv *platform.Invocation) error {
+			return func(ctx context.Context, inv platform.Invocation) error {
 				order = append(order, "outer-before")
 				err := next(ctx, inv)
 				order = append(order, "outer-after")
@@ -105,7 +105,7 @@ func TestInstall_wrapperChainOrder(t *testing.T) {
 	reg.AddWrapper(hook.WrapperEntry{
 		Name: "inner", Selector: platform.All(),
 		Fn: func(next platform.Handler) platform.Handler {
-			return func(ctx context.Context, inv *platform.Invocation) error {
+			return func(ctx context.Context, inv platform.Invocation) error {
 				order = append(order, "inner-before")
 				err := next(ctx, inv)
 				order = append(order, "inner-after")
@@ -142,8 +142,8 @@ func TestInstall_denialGuard_physicalIsolation(t *testing.T) {
 			return errors.New("CommandPruned: this is the denyStub")
 		},
 		Annotations: map[string]string{
-			"lark:pruning_denied_layer":  "pruning",
-			"lark:pruning_denied_source": "yaml",
+			"lark:policy_denied_layer":  "policy",
+			"lark:policy_denied_source": "yaml",
 		},
 	}
 	root.AddCommand(leaf)
@@ -154,7 +154,7 @@ func TestInstall_denialGuard_physicalIsolation(t *testing.T) {
 	reg.AddWrapper(hook.WrapperEntry{
 		Name: "malicious", Selector: platform.All(),
 		Fn: func(next platform.Handler) platform.Handler {
-			return func(ctx context.Context, inv *platform.Invocation) error {
+			return func(ctx context.Context, inv platform.Invocation) error {
 				maliciousWrapCalled = true
 				return nil // suppress the denial
 			}
@@ -189,7 +189,7 @@ func TestInstall_observerPanicIsolated(t *testing.T) {
 	reg := hook.NewRegistry()
 	reg.AddObserver(hook.ObserverEntry{
 		Name: "buggy", When: platform.Before, Selector: platform.All(),
-		Fn: func(context.Context, *platform.Invocation) {
+		Fn: func(context.Context, platform.Invocation) {
 			panic("plugin author wrote bad code")
 		},
 	})
@@ -217,7 +217,7 @@ func TestInstall_abortErrorBecomesExitError(t *testing.T) {
 	reg.AddWrapper(hook.WrapperEntry{
 		Name: "rejecter", Selector: platform.All(),
 		Fn: func(_ platform.Handler) platform.Handler {
-			return func(context.Context, *platform.Invocation) error {
+			return func(context.Context, platform.Invocation) error {
 				return &platform.AbortError{
 					HookName: "rejecter",
 					Reason:   "policy says no",
@@ -276,14 +276,14 @@ func TestInstall_namespacedWrap_doesNotMutateSentinel(t *testing.T) {
 		Name:     "plugin-a.wrap",
 		Selector: platform.ByCommandPath("+a"),
 		Fn: func(platform.Handler) platform.Handler {
-			return func(context.Context, *platform.Invocation) error { return sentinel }
+			return func(context.Context, platform.Invocation) error { return sentinel }
 		},
 	})
 	reg.AddWrapper(hook.WrapperEntry{
 		Name:     "plugin-b.wrap",
 		Selector: platform.ByCommandPath("+b"),
 		Fn: func(platform.Handler) platform.Handler {
-			return func(context.Context, *platform.Invocation) error { return sentinel }
+			return func(context.Context, platform.Invocation) error { return sentinel }
 		},
 	})
 
@@ -322,6 +322,45 @@ func checkHookName(t *testing.T, err error, want string) {
 	detail := exitErr.Detail.Detail.(map[string]any)
 	if detail["hook_name"] != want {
 		t.Errorf("hook_name = %v, want %v", detail["hook_name"], want)
+	}
+}
+
+// A Before observer mutating inv.Args() must not affect what the
+// original RunE sees: pins the slice-level read-only contract.
+func TestInstall_argsNotMutableByObserver(t *testing.T) {
+	root := &cobra.Command{Use: "lark-cli"}
+
+	var seenByRunE []string
+	leaf := &cobra.Command{
+		Use: "+echo",
+		RunE: func(_ *cobra.Command, args []string) error {
+			seenByRunE = append([]string(nil), args...)
+			return nil
+		},
+	}
+	root.AddCommand(leaf)
+
+	reg := hook.NewRegistry()
+	reg.AddObserver(hook.ObserverEntry{
+		Name: "tamper", When: platform.Before, Selector: platform.All(),
+		Fn: func(_ context.Context, inv platform.Invocation) {
+			got := inv.Args()
+			if len(got) > 0 {
+				got[0] = "HIJACKED"
+			}
+		},
+	})
+	hook.Install(root, reg, fakeViewSource{view: fakeView{path: "+echo"}})
+
+	originalArgs := []string{"hello", "world"}
+	if err := leaf.RunE(leaf, originalArgs); err != nil {
+		t.Fatalf("RunE returned %v", err)
+	}
+	if !equalStrings(seenByRunE, originalArgs) {
+		t.Fatalf("RunE saw mutated args: got %v, want %v", seenByRunE, originalArgs)
+	}
+	if originalArgs[0] != "hello" {
+		t.Fatalf("caller's original args were mutated: %v", originalArgs)
 	}
 }
 

@@ -23,15 +23,17 @@
 //   - Invocation     - per-call context passed to handlers (Cmd view + DeniedByPolicy / StrictMode / Identity)
 //   - AbortError     - structured short-circuit error from a Wrapper; framework namespaces HookName
 //
-// Pruning surface (what Restrict contributes, also consumable from yaml policy):
+// Policy surface (what Restrict contributes, also consumable from yaml policy):
 //
-//   - Rule              - declarative pruning rule (Allow / Deny / MaxRisk / Identities)
+//   - Rule              - declarative policy rule (Allow / Deny / MaxRisk / Identities / AllowUnannotated)
 //   - CommandView       - read-only command metadata view (Path / Domain / Risk / Identities)
-//   - Risk constants    - the closed risk taxonomy (read < write < high-risk-write) + RiskRank
+//   - Risk / Identity   - defined string types with closed taxonomies; ParseRisk / ParseIdentity
+//     convert raw strings (yaml, cobra annotation) into typed values; r.Rank()
+//     gives a comparable rank for the read < write < high-risk-write ordering
 //   - CommandDeniedError - structured error returned to denied callers
 //
 // Stability: every exported symbol here is part of the contract. Internal
 // orchestration (staging, validation, RunE wrapping, denial guard) lives
-// under internal/platformhost, internal/hook and internal/pruning and is not
+// under internal/platform, internal/hook and internal/cmdpolicy and is not
 // importable by third parties.
 package platform

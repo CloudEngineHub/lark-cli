@@ -4,7 +4,7 @@
 package platform
 
 // CommandView is the read-only view of a cobra.Command exposed to plugins
-// and the pruning engine. *cobra.Command is deliberately NOT reachable
+// and the policy engine. *cobra.Command is deliberately NOT reachable
 // through this interface -- a plugin should never mutate the command tree.
 //
 // snapshot rules (enforced by hard-constraint #1 in the tech doc):
@@ -17,10 +17,11 @@ package platform
 //   - Path() is the canonical slash form ("docs/+fetch"), matching the
 //     doublestar glob semantics used by Rule.Allow / Rule.Deny.
 //
-//   - Risk() returns ok=false when the command is unannotated. The
-//     pruning engine treats an unannotated command as implicit deny
-//     whenever any Rule is registered, so risk-based Selectors never see
-//     unannotated commands during normal hook dispatch.
+//   - Risk() returns ok=false when the command is unannotated. The policy
+//     engine treats an unannotated command as implicit deny whenever any
+//     Rule without AllowUnannotated=true is registered, so risk-based
+//     Selectors never see unannotated commands during normal hook dispatch
+//     under that configuration.
 type CommandView interface {
 	// Path is the canonical slash-separated path, rootless ("docs/+update").
 	Path() string

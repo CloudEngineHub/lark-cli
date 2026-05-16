@@ -8,4 +8,4 @@ import "os"
 // defaultStderr is the real os.Stderr writer. Kept in a separate file so
 // tests can replace `stderr` (in install.go) with a buffer without
 // shadowing this variable.
-var defaultStderr = os.Stderr
+var defaultStderr = os.Stderr //nolint:forbidigo // framework-level fallback writer; hooks fire before IOStreams plumbing is available

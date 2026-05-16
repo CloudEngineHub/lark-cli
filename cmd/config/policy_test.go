@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/larksuite/cli/extension/platform"
+	"github.com/larksuite/cli/internal/cmdpolicy"
 	"github.com/larksuite/cli/internal/cmdutil"
-	"github.com/larksuite/cli/internal/pruning"
 )
 
 func newPolicyTestFactory() (*cmdutil.Factory, *bytes.Buffer, *bytes.Buffer) {
@@ -28,8 +28,8 @@ func newPolicyTestFactory() (*cmdutil.Factory, *bytes.Buffer, *bytes.Buffer) {
 // When nothing is recorded the command must still produce a JSON
 // envelope with source=none and a note explaining the missing context.
 func TestConfigPolicyShow_NoActivePolicy(t *testing.T) {
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	f, out, _ := newPolicyTestFactory()
 	if err := runConfigPolicyShow(f); err != nil {
@@ -51,18 +51,18 @@ func TestConfigPolicyShow_NoActivePolicy(t *testing.T) {
 // plus its source. yaml_shadowed is true when a yaml file exists but a
 // plugin overrode it; verified separately below.
 func TestConfigPolicyShow_PluginActive(t *testing.T) {
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	rule := &platform.Rule{
 		Name:    "secaudit",
 		Allow:   []string{"docs/**"},
 		MaxRisk: "read",
 	}
-	pruning.SetActive(&pruning.ActivePolicy{
+	cmdpolicy.SetActive(&cmdpolicy.ActivePolicy{
 		Rule: rule,
-		Source: pruning.ResolveSource{
-			Kind: pruning.SourcePlugin,
+		Source: cmdpolicy.ResolveSource{
+			Kind: cmdpolicy.SourcePlugin,
 			Name: "secaudit",
 		},
 		DeniedPaths: 42,
@@ -99,8 +99,8 @@ func TestConfigPolicyShow_PluginActive(t *testing.T) {
 // user "yaml IGNORED" so they're not surprised that their yaml is
 // inert.
 func TestConfigPolicyShow_YamlShadowedWarning(t *testing.T) {
-	pruning.ResetActiveForTesting()
-	t.Cleanup(pruning.ResetActiveForTesting)
+	cmdpolicy.ResetActiveForTesting()
+	t.Cleanup(cmdpolicy.ResetActiveForTesting)
 
 	dir := t.TempDir()
 	yamlPath := filepath.Join(dir, "policy.yml")
@@ -108,10 +108,10 @@ func TestConfigPolicyShow_YamlShadowedWarning(t *testing.T) {
 		t.Fatalf("write yaml: %v", err)
 	}
 
-	pruning.SetActive(&pruning.ActivePolicy{
+	cmdpolicy.SetActive(&cmdpolicy.ActivePolicy{
 		Rule: &platform.Rule{Name: "plug"},
-		Source: pruning.ResolveSource{
-			Kind: pruning.SourcePlugin,
+		Source: cmdpolicy.ResolveSource{
+			Kind: cmdpolicy.SourcePlugin,
 			Name: "plug",
 		},
 		YAMLPath: yamlPath,

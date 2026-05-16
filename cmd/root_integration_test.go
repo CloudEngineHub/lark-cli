@@ -27,6 +27,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Canonical strict-mode envelope strings shared across fixtures
+// (reflect.DeepEqual pins them; keep in sync with strictModeStubFrom).
+const (
+	strictModeBotMessage  = `strict mode is "bot", only bot-identity commands are available`
+	strictModeUserMessage = `strict mode is "user", only user-identity commands are available`
+	strictModeHint        = "if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)"
+)
+
 // buildIntegrationRootCmd creates a root command with api, service, and shortcut
 // subcommands wired to a test factory, simulating the real CLI command tree.
 func buildIntegrationRootCmd(t *testing.T, f *cmdutil.Factory) *cobra.Command {
@@ -354,8 +362,16 @@ func TestIntegration_StrictModeBot_ProfileOverride_DirectAuthLoginReturnsEnvelop
 		OK: false,
 		Error: &output.ErrDetail{
 			Type:    "command_denied",
-			Message: `strict mode is "bot", only bot-identity commands are available`,
-			Hint:    "if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)",
+			Message: strictModeBotMessage,
+			Hint:    strictModeHint,
+			Detail: map[string]any{
+				"path":          "auth/login",
+				"layer":         "strict_mode",
+				"policy_source": "strict-mode",
+				"rule_name":     "",
+				"reason_code":   "identity_not_supported",
+				"reason":        strictModeBotMessage,
+			},
 		},
 	})
 }
@@ -372,8 +388,16 @@ func TestIntegration_StrictModeBot_ProfileOverride_DirectUserShortcutReturnsEnve
 		OK: false,
 		Error: &output.ErrDetail{
 			Type:    "command_denied",
-			Message: `strict mode is "bot", only bot-identity commands are available`,
-			Hint:    "if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)",
+			Message: strictModeBotMessage,
+			Hint:    strictModeHint,
+			Detail: map[string]any{
+				"path":          "im/+messages-search",
+				"layer":         "strict_mode",
+				"policy_source": "strict-mode",
+				"rule_name":     "",
+				"reason_code":   "identity_not_supported",
+				"reason":        strictModeBotMessage,
+			},
 		},
 	})
 }
@@ -447,8 +471,16 @@ func TestIntegration_StrictModeUser_ProfileOverride_ServiceBotOnlyMethodReturnsE
 		OK: false,
 		Error: &output.ErrDetail{
 			Type:    "command_denied",
-			Message: `strict mode is "user", only user-identity commands are available`,
-			Hint:    "if the user explicitly wants to switch policy, see `lark-cli config strict-mode --help` (confirm with the user before switching; switching does NOT require re-bind)",
+			Message: strictModeUserMessage,
+			Hint:    strictModeHint,
+			Detail: map[string]any{
+				"path":          "im/images/create",
+				"layer":         "strict_mode",
+				"policy_source": "strict-mode",
+				"rule_name":     "",
+				"reason_code":   "identity_not_supported",
+				"reason":        strictModeUserMessage,
+			},
 		},
 	})
 }

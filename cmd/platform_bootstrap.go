@@ -1,0 +1,244 @@
+// Copyright (c) 2026 Lark Technologies Pte. Ltd.
+// SPDX-License-Identifier: MIT
+
+package cmd
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"path/filepath"
+
+	"github.com/spf13/cobra"
+
+	"github.com/larksuite/cli/extension/platform"
+	"github.com/larksuite/cli/internal/cmdpolicy"
+	"github.com/larksuite/cli/internal/hook"
+	internalplatform "github.com/larksuite/cli/internal/platform"
+	"github.com/larksuite/cli/internal/vfs"
+)
+
+// userPolicyFileName is the conventional filename for the user-layer Rule.
+// Lives under ~/.lark-cli/ to match the rest of the CLI's user-state
+// directory.
+const userPolicyFileName = "policy.yml"
+
+// applyUserPolicyPruning resolves the user-layer Rule from plugin
+// contributions and/or ~/.lark-cli/policy.yml and installs denyStubs
+// for commands it rejects.
+//
+// Missing yaml is not an error -- the CLI runs with no user-layer
+// restriction. A malformed Rule (bad MaxRisk enum, malformed glob, etc.)
+// surfaces via the returned error; the caller decides how to handle it.
+//
+// pluginRules carries Plugin.Restrict() contributions collected from
+// the InstallAll phase; nil/empty is fine.
+func applyUserPolicyPruning(rootCmd *cobra.Command, pluginRules []cmdpolicy.PluginRule) error {
+	yamlPath, err := userPolicyPath()
+	if err != nil {
+		// No user home dir means we cannot locate the policy. Treat
+		// the same as "file missing": no pruning, no error. This keeps
+		// non-interactive CI environments (no HOME set) running.
+		yamlPath = ""
+	}
+
+	rule, source, err := cmdpolicy.Resolve(pluginRules, yamlPath)
+	if err != nil {
+		return err
+	}
+	if rule == nil {
+		cmdpolicy.SetActive(&cmdpolicy.ActivePolicy{
+			Source:   source,
+			YAMLPath: yamlPath,
+		})
+		return nil
+	}
+
+	engine := cmdpolicy.New(rule)
+	decisions := engine.EvaluateAll(rootCmd)
+	denied := cmdpolicy.BuildDeniedByPath(rootCmd, decisions, source, rule.Name)
+	cmdpolicy.Apply(rootCmd, denied)
+
+	// Record the active policy so `config policy show` can read it.
+	cmdpolicy.SetActive(&cmdpolicy.ActivePolicy{
+		Rule:        rule,
+		Source:      source,
+		YAMLPath:    yamlPath,
+		DeniedPaths: len(denied),
+	})
+	return nil
+}
+
+// installPluginsAndHooks runs the InstallAll phase on the globally-
+// registered plugins, returning the Plugin.Restrict contributions for
+// cmdpolicy and the populated hook.Registry for the runtime wrapper.
+// Errors from FailClosed plugins propagate; FailOpen failures are
+// warned to errOut and the loop continues.
+func installPluginsAndHooks(errOut io.Writer) (*internalplatform.InstallResult, error) {
+	plugins := platform.RegisteredPlugins()
+	if len(plugins) == 0 {
+		return &internalplatform.InstallResult{Registry: nil}, nil
+	}
+	return internalplatform.InstallAll(plugins, errOut)
+}
+
+// recordInventory builds and stores the plugin inventory snapshot for
+// diagnostic commands (config plugins show) to read at runtime. Called
+// once from build.go after applyUserPolicyPruning + wireHooks succeed.
+func recordInventory(installResult *internalplatform.InstallResult) {
+	if installResult == nil {
+		internalplatform.SetActiveInventory(nil)
+		return
+	}
+	pluginSrcs := make([]internalplatform.PluginInventorySource, 0, len(installResult.Plugins))
+	for _, p := range installResult.Plugins {
+		pluginSrcs = append(pluginSrcs, internalplatform.PluginInventorySource{
+			Name:         p.Name,
+			Version:      p.Version,
+			Capabilities: p.Capabilities,
+		})
+	}
+	ruleSrcs := make([]internalplatform.RuleInventorySource, 0, len(installResult.PluginRules))
+	for _, r := range installResult.PluginRules {
+		if r.Rule == nil {
+			continue
+		}
+		idents := make([]string, len(r.Rule.Identities))
+		for i, id := range r.Rule.Identities {
+			idents[i] = string(id)
+		}
+		ruleSrcs = append(ruleSrcs, internalplatform.RuleInventorySource{
+			PluginName:       r.PluginName,
+			Allow:            r.Rule.Allow,
+			Deny:             r.Rule.Deny,
+			MaxRisk:          string(r.Rule.MaxRisk),
+			Identities:       idents,
+			RuleName:         r.Rule.Name,
+			Desc:             r.Rule.Description,
+			AllowUnannotated: r.Rule.AllowUnannotated,
+		})
+	}
+	internalplatform.SetActiveInventory(internalplatform.BuildInventory(pluginSrcs, installResult.Registry, ruleSrcs))
+}
+
+// wireHooks installs Observer/Wrapper hooks onto every runnable command
+// and emits the Startup lifecycle event. The registry may be nil when
+// no plugin contributed any hook -- the function short-circuits in
+// that case to avoid useless RunE wrapping.
+func wireHooks(ctx context.Context, rootCmd *cobra.Command, reg *hook.Registry) error {
+	if reg == nil {
+		return nil
+	}
+	hook.Install(rootCmd, reg, cobraCommandViewSource{})
+	return hook.Emit(ctx, reg, platform.Startup, nil)
+}
+
+// cobraCommandViewSource is the default CommandViewSource: it builds a
+// CommandView directly from a *cobra.Command on demand. A future PR
+// will snapshot views at registration time so the view survives
+// strict-mode's RemoveCommand+AddCommand replacement of the
+// underlying *cobra.Command pointer. For now this is acceptable
+// because user-layer cmdpolicy preserves the pointer (only strict-mode
+// swaps it), and strict-mode-pruned commands are already unreachable
+// by the hook chain.
+type cobraCommandViewSource struct{}
+
+func (cobraCommandViewSource) View(cmd *cobra.Command) platform.CommandView {
+	return cobraCommandView{cmd: cmd}
+}
+
+// cobraCommandView adapts *cobra.Command to the CommandView interface.
+type cobraCommandView struct {
+	cmd *cobra.Command
+}
+
+func (v cobraCommandView) Path() string {
+	return cmdpolicy.CanonicalPath(v.cmd)
+}
+
+func (v cobraCommandView) Domain() string {
+	for c := v.cmd; c != nil; c = c.Parent() {
+		if c.Annotations == nil {
+			continue
+		}
+		if v, ok := c.Annotations["cmdmeta.domain"]; ok && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func (v cobraCommandView) Risk() (platform.Risk, bool) {
+	for c := v.cmd; c != nil; c = c.Parent() {
+		if c.Annotations == nil {
+			continue
+		}
+		if r, ok := c.Annotations["risk_level"]; ok && r != "" {
+			return platform.Risk(r), true
+		}
+	}
+	return "", false
+}
+
+func (v cobraCommandView) Identities() []platform.Identity {
+	for c := v.cmd; c != nil; c = c.Parent() {
+		if c.Annotations == nil {
+			continue
+		}
+		if raw, ok := c.Annotations["lark:supportedIdentities"]; ok && raw != "" {
+			parts := splitCSV(raw)
+			out := make([]platform.Identity, len(parts))
+			for i, p := range parts {
+				out[i] = platform.Identity(p)
+			}
+			return out
+		}
+	}
+	return nil
+}
+
+func (v cobraCommandView) Annotation(key string) (string, bool) {
+	if v.cmd.Annotations == nil {
+		return "", false
+	}
+	s, ok := v.cmd.Annotations[key]
+	return s, ok
+}
+
+// splitCSV is a tiny csv-without-quotes helper. The
+// lark:supportedIdentities annotation is always plain
+// "user" / "bot" / "user,bot" without escaping.
+func splitCSV(s string) []string {
+	out := []string{}
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ',' {
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	out = append(out, s[start:])
+	return out
+}
+
+// userPolicyPath returns the absolute path of ~/.lark-cli/policy.yml,
+// or an error if the user's home directory cannot be determined.
+func userPolicyPath() (string, error) {
+	home, err := vfs.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".lark-cli", userPolicyFileName), nil
+}
+
+// warnPolicyError writes a one-line stderr warning when the user policy
+// fails to load. V1 yaml errors are fail-OPEN -- the CLI keeps running
+// without policy enforcement so the user can fix the typo. Plugin-supplied
+// rules are fail-CLOSED instead because integrators take a code-level
+// responsibility for them.
+func warnPolicyError(errOut io.Writer, err error) {
+	if err == nil {
+		return
+	}
+	fmt.Fprintf(errOut, "warning: user policy not applied: %v\n", err)
+}

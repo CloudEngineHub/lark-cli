@@ -3,17 +3,17 @@
 
 package platform
 
-// Rule is the declarative pruning rule data structure. yaml files and (once
-// the Hook surface lands) Plugin.Restrict() both produce the same Rule.
+// Rule is the declarative policy rule data structure. yaml files and
+// Plugin.Restrict() both produce the same Rule.
 //
 // At any moment there is at most one effective Rule -- the resolver decides
 // which source wins (Plugin > yaml > none). This package only defines the
-// shape; selection lives in internal/pruning.
+// shape; selection lives in internal/cmdpolicy.
 //
 // The four filter fields are joined by AND. See the engine's Evaluate for
 // the full semantics. JSON tags are used by `config policy show`; yaml
-// parsing lives in internal/pruning/yaml so the public API does not depend
-// on a yaml library.
+// parsing lives in internal/cmdpolicy/yaml so the public API does not
+// depend on a yaml library.
 type Rule struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
@@ -36,4 +36,25 @@ type Rule struct {
 	// the intersection with the command's own supported identities is
 	// non-empty. Empty slice means "no identity restriction".
 	Identities []Identity `json:"identities,omitempty"`
+
+	// AllowUnannotated controls how commands missing a risk_level
+	// annotation are handled when this Rule is active.
+	//
+	// Default (false, fail-closed): unannotated commands are rejected
+	// with reason_code=risk_not_annotated. This is the safe default
+	// — a typo'd or forgotten annotation cannot slip past an
+	// "agent read-only" rule.
+	//
+	// Set to true to opt out during gradual adoption: lark-cli main
+	// has hundreds of service commands that may not yet carry
+	// risk_level annotations, and a brand-new policy plugin would
+	// otherwise lock the binary to nothing.
+	//
+	// This flag does NOT affect risk_invalid (typos): a command that
+	// claims a risk but mis-spells it is always denied, regardless of
+	// AllowUnannotated. Typo is a code bug, not a migration phase.
+	//
+	// No yaml tag: yaml decoding lives in internal/cmdpolicy/yaml so
+	// platform stays free of a yaml library dependency.
+	AllowUnannotated bool `json:"allow_unannotated,omitempty"`
 }
