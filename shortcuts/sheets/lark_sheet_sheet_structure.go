@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/larksuite/cli/internal/validate"
 	"github.com/larksuite/cli/shortcuts/common"
 )
 
@@ -494,4 +495,100 @@ func columnIndexToLetter(idx int) string {
 		idx /= 26
 	}
 	return string(out)
+}
+
+// ─── +dim-move (legacy OAPI, cli_status: cli-only) ───────────────────
+//
+// Moves a contiguous block of rows or columns to a new index in the same
+// sheet via the legacy v2 endpoint (not the One-OpenAPI dispatcher).
+// CLI's --start / --end are 0-based inclusive; the endpoint expects
+// half-open [startIndex, endIndex).
+
+var DimMove = common.Shortcut{
+	Service:     "sheets",
+	Command:     "+dim-move",
+	Description: "Move a contiguous block of rows or columns to a new position (re-numbers neighbors).",
+	Risk:        "write",
+	Scopes:      []string{"sheets:spreadsheet:write_only", "sheets:spreadsheet:read"},
+	AuthTypes:   []string{"user", "bot"},
+	HasFormat:   true,
+	Flags: append(publicSheetFlags(),
+		common.Flag{Name: "dimension", Required: true, Enum: dimEnum, Desc: "`row` or `column`"},
+		common.Flag{Name: "start", Type: "int", Required: true, Desc: "source start (0-indexed, inclusive)"},
+		common.Flag{Name: "end", Type: "int", Required: true, Desc: "source end (0-indexed, inclusive)"},
+		common.Flag{Name: "target", Type: "int", Required: true, Desc: "destination index (0-indexed); rows/cols move to land BEFORE this index"},
+	),
+	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
+		if _, err := resolveSpreadsheetToken(runtime); err != nil {
+			return err
+		}
+		if _, _, err := resolveSheetSelector(runtime); err != nil {
+			return err
+		}
+		if !runtime.Changed("dimension") || !runtime.Changed("start") || !runtime.Changed("end") || !runtime.Changed("target") {
+			return common.FlagErrorf("--dimension / --start / --end / --target are all required")
+		}
+		if runtime.Int("start") < 0 || runtime.Int("end") < runtime.Int("start") {
+			return common.FlagErrorf("--end (%d) must be >= --start (%d) (both 0-indexed, inclusive)", runtime.Int("end"), runtime.Int("start"))
+		}
+		if runtime.Int("target") < 0 {
+			return common.FlagErrorf("--target must be >= 0")
+		}
+		return nil
+	},
+	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
+		token, _ := resolveSpreadsheetToken(runtime)
+		sheetID, sheetName, _ := resolveSheetSelector(runtime)
+		body := dimMoveBody(runtime, sheetSelectorPlaceholder(sheetID, sheetName))
+		return common.NewDryRunAPI().
+			POST(fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", token)).
+			Body(body).
+			Set("spreadsheet_token", token)
+	},
+	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
+		token, err := resolveSpreadsheetToken(runtime)
+		if err != nil {
+			return err
+		}
+		sheetID, sheetName, err := resolveSheetSelector(runtime)
+		if err != nil {
+			return err
+		}
+		// Legacy v2 endpoint needs sheet_id. Resolve sheet_name client-side
+		// when needed (reuses lookupSheetIndex which fetches workbook structure).
+		if sheetID == "" {
+			lookedID, _, err := lookupSheetIndex(ctx, runtime, token, "", sheetName)
+			if err != nil {
+				return err
+			}
+			sheetID = lookedID
+		}
+		body := dimMoveBody(runtime, sheetID)
+		data, err := runtime.CallAPI(
+			"POST",
+			fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", validate.EncodePathSegment(token)),
+			nil, body,
+		)
+		if err != nil {
+			return err
+		}
+		runtime.Out(data, nil)
+		return nil
+	},
+}
+
+func dimMoveBody(runtime *common.RuntimeContext, sheetID string) map[string]interface{} {
+	dim := "ROWS"
+	if runtime.Str("dimension") == "column" {
+		dim = "COLUMNS"
+	}
+	return map[string]interface{}{
+		"source": map[string]interface{}{
+			"sheetId":        sheetID,
+			"majorDimension": dim,
+			"startIndex":     runtime.Int("start"),
+			"endIndex":       runtime.Int("end") + 1, // CLI inclusive → API exclusive
+		},
+		"destinationIndex": runtime.Int("target"),
+	}
 }

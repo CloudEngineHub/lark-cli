@@ -167,6 +167,60 @@ func TestCellsSet_RequiresCellsField(t *testing.T) {
 	}
 }
 
+// TestCellsSetImage_DryRun verifies the 2-step plan (upload + embed) is
+// rendered, including the parent_type=sheet_image upload metadata.
+func TestCellsSetImage_DryRun(t *testing.T) {
+	t.Parallel()
+	calls := parseDryRunAPI(t, CellsSetImage, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--range", "A1",
+		"--image", "./README.md", // any existing-shaped path; dry-run skips stat
+	})
+	if len(calls) != 2 {
+		t.Fatalf("api calls = %d, want 2 (upload + set_cell_range)", len(calls))
+	}
+	upload := calls[0].(map[string]interface{})
+	if upload["url"] != "/open-apis/drive/v1/medias/upload_all" {
+		t.Errorf("upload url = %v", upload["url"])
+	}
+	ubody, _ := upload["body"].(map[string]interface{})
+	if ubody["parent_type"] != "sheet_image" {
+		t.Errorf("parent_type = %v, want sheet_image", ubody["parent_type"])
+	}
+	if ubody["parent_node"] != testToken {
+		t.Errorf("parent_node = %v, want token", ubody["parent_node"])
+	}
+
+	embed := calls[1].(map[string]interface{})
+	body, _ := embed["body"].(map[string]interface{})
+	input := decodeToolInput(t, body, "set_cell_range")
+	cells, _ := input["cells"].([]interface{})
+	row, _ := cells[0].([]interface{})
+	cell, _ := row[0].(map[string]interface{})
+	rt, _ := cell["rich_text"].([]interface{})
+	if len(rt) != 1 {
+		t.Fatalf("rich_text len = %d, want 1", len(rt))
+	}
+	item, _ := rt[0].(map[string]interface{})
+	if item["type"] != "embed-image" {
+		t.Errorf("rich_text.type = %v, want embed-image", item["type"])
+	}
+	if item["attachment_name"] != "README.md" {
+		t.Errorf("attachment_name = %v, want README.md (basename)", item["attachment_name"])
+	}
+}
+
+func TestCellsSetImage_RangeMustBeSingleCell(t *testing.T) {
+	t.Parallel()
+	stdout, stderr, err := runShortcutCapturingErr(t, CellsSetImage, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--range", "A1:B2", "--image", "./foo.png", "--dry-run",
+	})
+	if err == nil || !strings.Contains(stdout+stderr+err.Error(), "must be exactly one cell") {
+		t.Errorf("expected single-cell guard; got=%s|%s|%v", stdout, stderr, err)
+	}
+}
+
 // TestRangeDimensions exercises the A1 parser's corner cases used by
 // cells-set-style / dropdown-set / dim-resize.
 func TestRangeDimensions(t *testing.T) {

@@ -20,6 +20,8 @@ func Shortcuts() []common.Shortcut {
 		SheetHide,
 		SheetUnhide,
 		SheetSetTabColor,
+		WorkbookCreate,
+		WorkbookExport,
 
 		// lark_sheet_sheet_structure
 		SheetInfo,
@@ -30,6 +32,7 @@ func Shortcuts() []common.Shortcut {
 		DimFreeze,
 		DimGroup,
 		DimUngroup,
+		DimMove,
 
 		// lark_sheet_read_data
 		CellsGet,
@@ -43,6 +46,7 @@ func Shortcuts() []common.Shortcut {
 		// lark_sheet_write_cells
 		CellsSet,
 		CellsSetStyle,
+		CellsSetImage,
 		CsvPut,
 		DropdownSet,
 
@@ -79,11 +83,5 @@ func Shortcuts() []common.Shortcut {
 		CellsBatchSetStyle,
 		DropdownUpdate,
 		DropdownDelete,
-
-		// cli-only (legacy OAPI direct calls)
-		WorkbookCreate,
-		WorkbookExport,
-		DimMove,
-		CellsSetImage,
 	}
 }

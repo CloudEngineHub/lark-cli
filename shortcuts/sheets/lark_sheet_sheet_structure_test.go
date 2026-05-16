@@ -169,6 +169,41 @@ func TestDimRange_StartEndValidation(t *testing.T) {
 	}
 }
 
+// TestDimMove_DryRun verifies the legacy v2 dimension_range payload
+// shape. CLI's 0-based inclusive (--start / --end) becomes the v2
+// endpoint's half-open [startIndex, endIndex).
+func TestDimMove_DryRun(t *testing.T) {
+	t.Parallel()
+	calls := parseDryRunAPI(t, DimMove, []string{
+		"--url", testURL, "--sheet-id", testSheetID,
+		"--dimension", "row", "--start", "0", "--end", "2", "--target", "10",
+	})
+	if len(calls) != 1 {
+		t.Fatalf("api calls = %d, want 1", len(calls))
+	}
+	c := calls[0].(map[string]interface{})
+	if !strings.Contains(c["url"].(string), "/sheets/v2/spreadsheets/") {
+		t.Errorf("url = %v, want sheets/v2 path", c["url"])
+	}
+	body, _ := c["body"].(map[string]interface{})
+	src, _ := body["source"].(map[string]interface{})
+	if src["sheetId"] != testSheetID {
+		t.Errorf("source.sheetId = %v", src["sheetId"])
+	}
+	if src["majorDimension"] != "ROWS" {
+		t.Errorf("source.majorDimension = %v, want ROWS", src["majorDimension"])
+	}
+	if src["startIndex"].(float64) != 0 {
+		t.Errorf("startIndex = %v, want 0", src["startIndex"])
+	}
+	if src["endIndex"].(float64) != 3 {
+		t.Errorf("endIndex = %v, want 3 (CLI end+1 for half-open)", src["endIndex"])
+	}
+	if body["destinationIndex"].(float64) != 10 {
+		t.Errorf("destinationIndex = %v, want 10", body["destinationIndex"])
+	}
+}
+
 // TestColumnIndexToLetter exercises the corner cases of the letter helper:
 // single, double, and triple-letter spans.
 func TestColumnIndexToLetter(t *testing.T) {

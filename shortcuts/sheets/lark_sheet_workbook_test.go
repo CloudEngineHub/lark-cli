@@ -275,6 +275,126 @@ func TestWorkbook_Validation(t *testing.T) {
 	}
 }
 
+// ─── +workbook-create / +workbook-export (legacy OAPI) ───────────────
+
+// TestWorkbookCreate_DryRun verifies the two-step plan (create
+// spreadsheet + optional set_cell_range follow-up) is rendered.
+func TestWorkbookCreate_DryRun(t *testing.T) {
+	t.Parallel()
+
+	t.Run("minimal title only", func(t *testing.T) {
+		t.Parallel()
+		calls := parseDryRunAPI(t, WorkbookCreate, []string{"--title", "MySheet"})
+		if len(calls) != 1 {
+			t.Fatalf("api calls = %d, want 1 (no headers/data)", len(calls))
+		}
+		c := calls[0].(map[string]interface{})
+		if c["url"] != "/open-apis/sheets/v3/spreadsheets" {
+			t.Errorf("url = %v, want /open-apis/sheets/v3/spreadsheets", c["url"])
+		}
+		body, _ := c["body"].(map[string]interface{})
+		if body["title"] != "MySheet" {
+			t.Errorf("body.title = %v, want MySheet", body["title"])
+		}
+	})
+
+	t.Run("with headers and data → 2-step plan", func(t *testing.T) {
+		t.Parallel()
+		calls := parseDryRunAPI(t, WorkbookCreate, []string{
+			"--title", "Sales",
+			"--headers", `["Name","Score"]`,
+			"--data", `[["alice",95],["bob",88]]`,
+		})
+		if len(calls) != 2 {
+			t.Fatalf("api calls = %d, want 2 (create + fill)", len(calls))
+		}
+		fill := calls[1].(map[string]interface{})
+		if !strings.Contains(fill["url"].(string), "/sheet_ai/v2/spreadsheets/") {
+			t.Errorf("fill url = %v, want sheet_ai/v2 path", fill["url"])
+		}
+		body, _ := fill["body"].(map[string]interface{})
+		input := decodeToolInput(t, body, "set_cell_range")
+		if input["range"] != "A1:B3" {
+			t.Errorf("fill range = %v, want A1:B3 (1 header + 2 data rows × 2 cols)", input["range"])
+		}
+	})
+}
+
+// TestWorkbookCreate_DataValidation rejects bad JSON shape.
+func TestWorkbookCreate_DataValidation(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"headers not array", []string{"--title", "X", "--headers", `"abc"`}, "must be a JSON array"},
+		{"data not 2D", []string{"--title", "X", "--data", `["a","b"]`}, "must be an array"},
+	}
+	for _, tt := range cases {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			stdout, stderr, err := runShortcutCapturingErr(t, WorkbookCreate, append(tt.args, "--dry-run"))
+			if err == nil || !strings.Contains(stdout+stderr+err.Error(), tt.want) {
+				t.Errorf("expected %q; got=%s|%s|%v", tt.want, stdout, stderr, err)
+			}
+		})
+	}
+}
+
+// TestWorkbookExport_DryRun checks the 2-or-3 step plan depending on
+// --output-path. The order should be: POST → GET (poll) → optional GET
+// (download).
+func TestWorkbookExport_DryRun(t *testing.T) {
+	t.Parallel()
+
+	t.Run("xlsx without --output-path → 2 steps", func(t *testing.T) {
+		t.Parallel()
+		calls := parseDryRunAPI(t, WorkbookExport, []string{"--url", testURL, "--file-extension", "xlsx"})
+		if len(calls) != 2 {
+			t.Fatalf("api calls = %d, want 2 (create + poll)", len(calls))
+		}
+		create := calls[0].(map[string]interface{})
+		if create["url"] != "/open-apis/drive/v1/export_tasks" {
+			t.Errorf("first url = %v", create["url"])
+		}
+		body, _ := create["body"].(map[string]interface{})
+		if body["type"] != "sheet" || body["file_extension"] != "xlsx" || body["token"] != testToken {
+			t.Errorf("create body = %#v", body)
+		}
+	})
+
+	t.Run("csv → 3 steps, with sub_id", func(t *testing.T) {
+		t.Parallel()
+		calls := parseDryRunAPI(t, WorkbookExport, []string{
+			"--url", testURL, "--file-extension", "csv", "--sheet-id", "sh1",
+			"--output-path", "/tmp/out.csv",
+		})
+		if len(calls) != 3 {
+			t.Fatalf("api calls = %d, want 3", len(calls))
+		}
+		body, _ := calls[0].(map[string]interface{})["body"].(map[string]interface{})
+		if body["sub_id"] != "sh1" {
+			t.Errorf("csv export missing sub_id: %#v", body)
+		}
+		dl := calls[2].(map[string]interface{})
+		if !strings.Contains(dl["url"].(string), "/export_tasks/file/") {
+			t.Errorf("download url = %v", dl["url"])
+		}
+	})
+
+	t.Run("csv requires --sheet-id", func(t *testing.T) {
+		t.Parallel()
+		stdout, stderr, err := runShortcutCapturingErr(t, WorkbookExport, []string{
+			"--url", testURL, "--file-extension", "csv", "--dry-run",
+		})
+		if err == nil || !strings.Contains(stdout+stderr+err.Error(), "--sheet-id is required") {
+			t.Errorf("expected sheet-id guard; got=%s|%s|%v", stdout, stderr, err)
+		}
+	})
+}
+
 // assertInputEquals compares the decoded tool input map against the wanted
 // fields. Extra fields in `got` are allowed (defaults, optional fields);
 // every key in `want` must match exactly.

@@ -6,6 +6,7 @@ package sheets
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -536,4 +537,144 @@ func fillCellsMatrix(rows, cols int, prototype map[string]interface{}) [][]inter
 		cells[r] = row
 	}
 	return cells
+}
+
+// ─── +cells-set-image (cli_only_derivative) ──────────────────────────
+//
+// The backing tool (set_cell_range) is in mcp-tools.json, but the CLI
+// shortcut also needs a local-file upload before it can call the tool.
+// That extra step doesn't fit the One-OpenAPI dispatcher, so the spec
+// marks this shortcut cli_only_derivative — the CLI uploads the image
+// to drive (parent_type=sheet_image) and then writes the returned
+// file_token into the target cell via callTool(set_cell_range) with a
+// rich_text embed-image entry.
+
+// CellsSetImage uploads a local image to drive (parent_type=sheet_image,
+// parent_node=spreadsheet token) and then writes a rich_text embed-image
+// into the target single-cell range via the set_cell_range tool.
+var CellsSetImage = common.Shortcut{
+	Service:     "sheets",
+	Command:     "+cells-set-image",
+	Description: "Embed a local image into a single cell (uploads via drive, then set_cell_range with rich_text embed-image).",
+	Risk:        "write",
+	Scopes:      []string{"sheets:spreadsheet:write_only", "drive:file:upload"},
+	AuthTypes:   []string{"user", "bot"},
+	HasFormat:   true,
+	Flags: append(publicSheetFlags(),
+		common.Flag{Name: "range", Required: true, Desc: "single target cell (e.g. A1; start/end must equal)"},
+		common.Flag{Name: "image", Required: true, Desc: "local image path (PNG/JPEG/JPG/GIF/BMP/JFIF/EXIF/TIFF/BPG/HEIC)"},
+		common.Flag{Name: "name", Desc: "uploaded file name (with extension); defaults to basename(--image)"},
+	),
+	Validate: func(ctx context.Context, runtime *common.RuntimeContext) error {
+		if _, err := resolveSpreadsheetToken(runtime); err != nil {
+			return err
+		}
+		if _, _, err := resolveSheetSelector(runtime); err != nil {
+			return err
+		}
+		r := strings.TrimSpace(runtime.Str("range"))
+		if r == "" {
+			return common.FlagErrorf("--range is required")
+		}
+		rows, cols, err := rangeDimensions(r)
+		if err != nil {
+			return common.FlagErrorf("--range %q: %v", r, err)
+		}
+		if rows != 1 || cols != 1 {
+			return common.FlagErrorf("--range %q must be exactly one cell (got %d×%d)", r, rows, cols)
+		}
+		if strings.TrimSpace(runtime.Str("image")) == "" {
+			return common.FlagErrorf("--image is required")
+		}
+		return nil
+	},
+	DryRun: func(ctx context.Context, runtime *common.RuntimeContext) *common.DryRunAPI {
+		token, _ := resolveSpreadsheetToken(runtime)
+		sheetID, sheetName, _ := resolveSheetSelector(runtime)
+		imgPath := strings.TrimSpace(runtime.Str("image"))
+		fileName := strings.TrimSpace(runtime.Str("name"))
+		if fileName == "" {
+			fileName = filepath.Base(imgPath)
+		}
+		setCellBody, _ := buildToolBody("set_cell_range", map[string]interface{}{
+			"excel_id": token,
+			"range":    strings.TrimSpace(runtime.Str("range")),
+			"sheet_id": sheetSelectorPlaceholder(sheetID, sheetName),
+			"cells": [][]interface{}{{map[string]interface{}{
+				"rich_text": []map[string]interface{}{{
+					"type":             "embed-image",
+					"attachment_token": "<file_token>",
+					"attachment_name":  fileName,
+				}},
+			}}},
+		})
+		return common.NewDryRunAPI().
+			POST("/open-apis/drive/v1/medias/upload_all").
+			Desc("upload local image to drive (parent_type=sheet_image)").
+			Body(map[string]interface{}{
+				"file_name":   fileName,
+				"parent_type": "sheet_image",
+				"parent_node": token,
+				"size":        "<file_size>",
+				"file":        "@" + imgPath,
+			}).
+			POST(toolInvokePath(token, ToolKindWrite)).
+			Desc("embed file_token into the cell via set_cell_range").
+			Body(setCellBody)
+	},
+	Execute: func(ctx context.Context, runtime *common.RuntimeContext) error {
+		token, err := resolveSpreadsheetToken(runtime)
+		if err != nil {
+			return err
+		}
+		sheetID, sheetName, err := resolveSheetSelector(runtime)
+		if err != nil {
+			return err
+		}
+		imgPath := strings.TrimSpace(runtime.Str("image"))
+		fileName := strings.TrimSpace(runtime.Str("name"))
+		if fileName == "" {
+			fileName = filepath.Base(imgPath)
+		}
+		info, err := runtime.FileIO().Stat(imgPath)
+		if err != nil {
+			return common.WrapInputStatError(err)
+		}
+		fileToken, err := common.UploadDriveMediaAll(runtime, common.DriveMediaUploadAllConfig{
+			FilePath:   imgPath,
+			FileName:   fileName,
+			FileSize:   info.Size(),
+			ParentType: "sheet_image",
+			ParentNode: &token,
+		})
+		if err != nil {
+			return err
+		}
+
+		setCellInput := map[string]interface{}{
+			"excel_id": token,
+			"range":    strings.TrimSpace(runtime.Str("range")),
+			"cells": [][]interface{}{{map[string]interface{}{
+				"rich_text": []map[string]interface{}{{
+					"type":             "embed-image",
+					"attachment_token": fileToken,
+					"attachment_name":  fileName,
+				}},
+			}}},
+		}
+		sheetSelectorForToolInput(setCellInput, sheetID, sheetName)
+		setCellOut, err := callTool(ctx, runtime, token, ToolKindWrite, "set_cell_range", setCellInput)
+		if err != nil {
+			return fmt.Errorf("image uploaded (file_token=%s) but cell write failed: %w", fileToken, err)
+		}
+		runtime.Out(map[string]interface{}{
+			"file_token":     fileToken,
+			"file_name":      fileName,
+			"set_cell_range": setCellOut,
+		}, nil)
+		return nil
+	},
+	Tips: []string{
+		"--range must be a single cell. The uploaded image becomes a cell-internal embed; use +float-image-create for floating images.",
+	},
 }
