@@ -70,16 +70,21 @@ func useName(cmd *cobra.Command) string {
 // still produces a stable, non-identifying label. When neither prefix
 // matches, the input is returned unchanged — those cases don't leak
 // anything that wasn't already passed in by the caller.
+//
+// The implementation operates on the cleaned strings (no
+// `filepath.Abs`) because the depguard / forbidigo lint policy bans
+// direct filesystem access from internal/. All real call sites pass
+// already-absolute paths (`core.GetBaseConfigDir()` returns absolute
+// when LARKSUITE_CLI_CONFIG_DIR or $HOME is set; resolver builds
+// yamlPath via filepath.Join on that absolute root). A relative input
+// simply falls through the prefix checks and is returned unchanged.
 func RedactHomeDir(path string) string {
 	if path == "" {
 		return ""
 	}
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		abs = path
-	}
+	clean := filepath.Clean(path)
 
-	if rel, ok := foldPrefix(abs, core.GetBaseConfigDir()); ok {
+	if rel, ok := foldPrefix(clean, core.GetBaseConfigDir()); ok {
 		if rel == "" {
 			return "<config>"
 		}
@@ -90,7 +95,7 @@ func RedactHomeDir(path string) string {
 	if err != nil || home == "" {
 		return path
 	}
-	if rel, ok := foldPrefix(abs, home); ok {
+	if rel, ok := foldPrefix(clean, home); ok {
 		if rel == "" {
 			return "~"
 		}
@@ -99,17 +104,18 @@ func RedactHomeDir(path string) string {
 	return path
 }
 
-// foldPrefix reports whether abs lives at or beneath prefix; on hit it
-// returns the slash-form relative tail (empty when abs == prefix).
-func foldPrefix(abs, prefix string) (string, bool) {
+// foldPrefix reports whether path lives at or beneath prefix; on hit
+// it returns the slash-form relative tail (empty when path == prefix).
+// filepath.Rel itself rejects the relative-vs-absolute mismatch case
+// with an error, so a relative input against an absolute prefix (or
+// vice versa) falls through to the "not a hit" branch — no extra
+// validation needed.
+func foldPrefix(path, prefix string) (string, bool) {
 	if prefix == "" {
 		return "", false
 	}
-	absPrefix, err := filepath.Abs(prefix)
-	if err != nil {
-		absPrefix = prefix
-	}
-	rel, err := filepath.Rel(absPrefix, abs)
+	cleanPrefix := filepath.Clean(prefix)
+	rel, err := filepath.Rel(cleanPrefix, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", false
 	}
