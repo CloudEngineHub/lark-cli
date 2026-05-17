@@ -331,3 +331,47 @@ func TestStrictModeStub_HasDenialAnnotation(t *testing.T) {
 			cmdpolicy.AnnotationDenialSource, src, "strict-mode")
 	}
 }
+
+// Audit / compliance observers fire even for strict-mode-denied commands
+// and rely on CommandView.Risk() / Identities() / etc. The stub must
+// carry the original command's annotations so those accessors keep
+// returning meaningful values; the Short/Long are preserved so `--help`
+// on a denied command still describes the original intent (parity with
+// cmdpolicy/apply.go::installDenyStub).
+func TestStrictModeStub_PreservesOriginalMetadata(t *testing.T) {
+	root := &cobra.Command{Use: "root"}
+	svc := &cobra.Command{Use: "im"}
+	root.AddCommand(svc)
+	userOnly := &cobra.Command{
+		Use:   "+search",
+		Short: "search messages",
+		Long:  "Search across IM history.",
+		RunE:  func(*cobra.Command, []string) error { return nil },
+	}
+	cmdutil.SetSupportedIdentities(userOnly, []string{"user"})
+	cmdutil.SetRisk(userOnly, "read")
+	svc.AddCommand(userOnly)
+
+	pruneForStrictMode(root, core.StrictModeBot)
+
+	stub := findCmd(root, "im", "+search")
+	if stub == nil {
+		t.Fatalf("expected im/+search stub")
+	}
+	if got := stub.Annotations["risk_level"]; got != "read" {
+		t.Errorf("stub risk_level = %q, want %q (lost in replacement)", got, "read")
+	}
+	if got := stub.Annotations["lark:supportedIdentities"]; got != "user" {
+		t.Errorf("stub supportedIdentities = %q, want %q", got, "user")
+	}
+	if stub.Short != "search messages" {
+		t.Errorf("stub Short = %q, want preserved Short", stub.Short)
+	}
+	if stub.Long != "Search across IM history." {
+		t.Errorf("stub Long = %q, want preserved Long", stub.Long)
+	}
+	// Denial stamps must still be present.
+	if stub.Annotations[cmdpolicy.AnnotationDenialLayer] != cmdpolicy.LayerStrictMode {
+		t.Errorf("denial annotation overwritten or missing")
+	}
+}

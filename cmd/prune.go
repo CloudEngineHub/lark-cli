@@ -79,16 +79,26 @@ func strictModeStubFrom(child *cobra.Command, mode core.StrictMode) *cobra.Comma
 		ReasonCode:   "identity_not_supported",
 		Reason:       stubMessage,
 	}
+	// Preserve the original command's annotations (risk_level,
+	// lark:supportedIdentities, cmdmeta.domain, ...) and help text so
+	// audit / compliance observers can still see what was denied.
+	// Stamp the denial annotations on top.
+	annotations := make(map[string]string, len(child.Annotations)+2)
+	for k, v := range child.Annotations {
+		annotations[k] = v
+	}
+	annotations[cmdpolicy.AnnotationDenialLayer] = cmdpolicy.LayerStrictMode
+	annotations[cmdpolicy.AnnotationDenialSource] = "strict-mode"
+
 	return &cobra.Command{
 		Use:                child.Use,
 		Aliases:            append([]string(nil), child.Aliases...),
+		Short:              child.Short,
+		Long:               child.Long,
 		Hidden:             true,
 		DisableFlagParsing: true,
 		Args:               cobra.ArbitraryArgs,
-		Annotations: map[string]string{
-			cmdpolicy.AnnotationDenialLayer:  cmdpolicy.LayerStrictMode,
-			cmdpolicy.AnnotationDenialSource: "strict-mode",
-		},
+		Annotations:        annotations,
 		PersistentPreRunE: func(c *cobra.Command, _ []string) error {
 			c.SilenceUsage = true
 			return nil
