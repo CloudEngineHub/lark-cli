@@ -121,16 +121,16 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 		return Decision{
 			Allowed:    false,
 			ReasonCode: "risk_not_annotated",
-			Reason:     "command has no risk_level annotation; required when a Rule is active (set rule.allow_unannotated=true to opt out during gradual adoption)",
+			Reason:     "command has no risk_level annotation; rule denies unannotated commands",
 		}
 	}
 
 	// Axis 1: Deny has priority.
-	if matchesAny(r.Deny, path) {
+	if matched, ok := firstMatch(r.Deny, path); ok {
 		return Decision{
 			Allowed:    false,
 			ReasonCode: "command_denylisted",
-			Reason:     "command denied by rule deny list",
+			Reason:     fmt.Sprintf("command path %q matched deny pattern %q", path, matched),
 		}
 	}
 
@@ -139,7 +139,7 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 		return Decision{
 			Allowed:    false,
 			ReasonCode: "domain_not_allowed",
-			Reason:     "command path not in rule allow list",
+			Reason:     fmt.Sprintf("command path %q not in allow list %v", path, r.Allow),
 		}
 	}
 
@@ -151,7 +151,7 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 			return Decision{
 				Allowed:    false,
 				ReasonCode: reasonCodeForRisk(cmdRisk),
-				Reason:     "command risk exceeds rule max_risk",
+				Reason:     fmt.Sprintf("command risk %q exceeds rule max_risk %q", cmdRisk, r.MaxRisk),
 			}
 		}
 	}
@@ -163,7 +163,7 @@ func (e *Engine) EvaluateOne(cmd *cobra.Command) Decision {
 			return Decision{
 				Allowed:    false,
 				ReasonCode: "identity_mismatch",
-				Reason:     "command identities do not intersect rule identities",
+				Reason:     fmt.Sprintf("command supports identities %v; rule allows %v", cmdIdents, r.Identities),
 			}
 		}
 	}
@@ -348,12 +348,20 @@ func reasonCodeForRisk(risk platform.Risk) string {
 // Invalid globs are skipped here -- they're rejected upstream by
 // ValidateRule when the rule first enters the system.
 func matchesAny(globs []string, path string) bool {
+	_, ok := firstMatch(globs, path)
+	return ok
+}
+
+// firstMatch returns the first glob in globs that matches path. Used by
+// command_denylisted so the envelope can name the specific deny pattern
+// that fired.
+func firstMatch(globs []string, path string) (string, bool) {
 	for _, g := range globs {
 		if ok, err := doublestar.Match(g, path); err == nil && ok {
-			return true
+			return g, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // hasIdentityIntersection reports whether the rule's typed identities

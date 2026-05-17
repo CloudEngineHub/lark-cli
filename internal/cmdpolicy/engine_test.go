@@ -324,6 +324,64 @@ func TestEvaluate_identitiesIntersection(t *testing.T) {
 	}
 }
 
+// Reason strings must carry both the attempted value and the rule's
+// constraint so the envelope is self-contained for AI consumers.
+// Asserting on substrings (not exact match) leaves room for minor wording
+// tweaks while pinning the value-carrying behaviour.
+func TestEvaluate_reasonCarriesAttemptAndConstraint(t *testing.T) {
+	root := buildTree()
+
+	cases := []struct {
+		name        string
+		rule        *platform.Rule
+		path        string
+		wantInReason []string
+	}{
+		{
+			name:         "identity_mismatch surfaces both identity sets",
+			rule:         &platform.Rule{Identities: []platform.Identity{"bot"}},
+			path:         "docs/+update", // identities=[user]
+			wantInReason: []string{"[user]", "[bot]"},
+		},
+		{
+			name:         "domain_not_allowed surfaces path and allow list",
+			rule:         &platform.Rule{Allow: []string{"docs/**"}},
+			path:         "im/+send",
+			wantInReason: []string{`"im/+send"`, "docs/**"},
+		},
+		{
+			name:         "command_denylisted surfaces matched deny pattern",
+			rule:         &platform.Rule{Deny: []string{"docs/+delete-*"}},
+			path:         "docs/+delete-doc",
+			wantInReason: []string{`"docs/+delete-doc"`, `"docs/+delete-*"`},
+		},
+		{
+			name:         "risk_too_high surfaces cmd risk and max_risk",
+			rule:         &platform.Rule{MaxRisk: "write"},
+			path:         "docs/+delete-doc", // risk=high-risk-write
+			wantInReason: []string{`"high-risk-write"`, `"write"`},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := cmdpolicy.New(tc.rule).EvaluateAll(root)
+			d, ok := got[tc.path]
+			if !ok {
+				t.Fatalf("no decision for %q", tc.path)
+			}
+			if d.Allowed {
+				t.Fatalf("%q should have been denied", tc.path)
+			}
+			for _, sub := range tc.wantInReason {
+				if !strings.Contains(d.Reason, sub) {
+					t.Errorf("reason %q missing %q", d.Reason, sub)
+				}
+			}
+		})
+	}
+}
+
 // Unknown identities defaults to ALLOW. A command with risk annotated
 // but without supportedIdentities passes any identity filter.
 func TestEvaluate_unknownIdentitiesIsAllow(t *testing.T) {
