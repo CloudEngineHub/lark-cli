@@ -58,10 +58,10 @@ func Install(root *cobra.Command, reg *Registry, snapshot CommandViewSource) {
 }
 
 // CommandViewSource resolves a *cobra.Command into a CommandView. The
-// snapshot is taken before pruning installs denyStubs, so reads from
-// here continue to see the original metadata even after the pointer
-// has been replaced (the cmd/prune.go strict-mode path swaps the
-// pointer; the Bootstrap pipeline preserves the snapshot anyway).
+// default implementation returns a live view over the cobra node;
+// strict-mode's replacement stubs (cmd/prune.go) carry the original
+// command's annotations forward so the view keeps reporting accurate
+// Risk / Identities / Domain after replacement.
 type CommandViewSource interface {
 	View(cmd *cobra.Command) platform.CommandView
 }

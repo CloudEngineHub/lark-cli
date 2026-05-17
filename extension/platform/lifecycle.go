@@ -10,8 +10,6 @@ type When int
 
 const (
 	// Before fires immediately before the command's business logic.
-	// Identity may not yet be resolved at this point -- see
-	// Invocation.Identity for the lazy-resolution contract.
 	Before When = iota
 
 	// After fires after the command's business logic (or its denyStub

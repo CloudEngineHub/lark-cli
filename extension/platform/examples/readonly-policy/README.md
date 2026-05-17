@@ -14,7 +14,6 @@ go build -o readonly-cli .
 # {
 #   "source": "plugin",
 #   "source_name": "readonly",
-#   "yaml_path": "/Users/you/.lark-cli/policy.yml",
 #   "denied_paths": N,
 #   "rule": {
 #     "name": "agent-readonly",

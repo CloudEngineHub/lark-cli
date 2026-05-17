@@ -7,12 +7,15 @@ package platform
 // and the policy engine. *cobra.Command is deliberately NOT reachable
 // through this interface -- a plugin should never mutate the command tree.
 //
-// snapshot rules (enforced by hard-constraint #1 in the tech doc):
+// View semantics:
 //
-//   - CommandView is a snapshot, not a live proxy. The implementation captures
-//     metadata before any RunE replacement happens, keyed by canonical slash
-//     path. Strict-mode's RemoveCommand+AddCommand pattern changes pointers
-//     but not paths, so the snapshot survives.
+//   - The view is a live proxy over the underlying *cobra.Command and its
+//     annotation chain. Strict-mode replaces nodes via RemoveCommand+
+//     AddCommand; the replacement stub explicitly carries the original
+//     command's annotations and help text forward so audit / compliance
+//     observers still see Risk / Identities / Domain after a denial.
+//     User-layer policy mutates in place, so its denyStubs preserve the
+//     original metadata by construction.
 //
 //   - Path() is the canonical slash form ("docs/+fetch"), matching the
 //     doublestar glob semantics used by Rule.Allow / Rule.Deny.

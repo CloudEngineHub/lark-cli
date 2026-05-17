@@ -61,7 +61,12 @@ func HideProfile(hide bool) BuildOption {
 	}
 }
 
-// Build constructs the full command tree without executing.
+// Build constructs the full command tree. It also installs registered
+// plugins and emits the Startup lifecycle event during assembly --
+// so Plugin.On(Startup) handlers run even if the returned command is
+// never dispatched. The matching Shutdown event is only emitted by
+// Execute; callers that bypass Execute will not see Shutdown fire.
+//
 // Returns only the cobra.Command; Factory and hook Registry are internal.
 // Use Execute for the standard production entry point.
 func Build(ctx context.Context, inv cmdutil.InvocationContext, opts ...BuildOption) *cobra.Command {

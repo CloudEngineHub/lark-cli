@@ -206,5 +206,3 @@ func (stubInvocation) Err() error                 { return nil }
 func (stubInvocation) DeniedByPolicy() bool       { return false }
 func (stubInvocation) DenialLayer() string        { return "" }
 func (stubInvocation) DenialPolicySource() string { return "" }
-func (stubInvocation) StrictMode() (string, bool) { return "", false }
-func (stubInvocation) Identity() (string, bool)   { return "", false }

@@ -7,10 +7,10 @@ import "time"
 
 // Invocation is the per-command data a Wrapper / Observer receives. It
 // is a read-only interface: the framework implementation lives in
-// internal/hook and is never visible to plugins, so there is no way
-// for plugin code to mutate denial / strict-mode / identity state.
+// internal/hook and is never visible to plugins, so plugin code cannot
+// mutate denial state.
 //
-// The struct is deliberately NOT a context.Context — it is data only,
+// The interface is deliberately NOT a context.Context — it is data only,
 // no cancellation. ctx (from the handler signature) carries
 // cancellation / timeout / trace propagation.
 //
@@ -22,8 +22,13 @@ import "time"
 //   - DeniedByPolicy / DenialLayer / DenialPolicySource are populated by
 //     the framework's denial guard before any hook runs
 type Invocation interface {
+	// Cmd returns the read-only metadata view of the dispatched command.
 	Cmd() CommandView
+
+	// Args returns a fresh copy of the positional args.
 	Args() []string
+
+	// Started is the wall-clock time the outermost RunE wrapper began.
 	Started() time.Time
 
 	// Err is the error the wrapped handler returned. Populated for

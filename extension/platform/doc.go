@@ -20,7 +20,7 @@
 //   - LifecycleHandler - reacts to Startup / Shutdown / etc. (LifecycleEvent + When)
 //   - Selector       - chooses which commands a hook applies to (ByDomain / ByWrite / ByReadOnly / ByExactRisk / And / Or / Not, etc.)
 //   - Handler        - the inner "run the command" function Wrappers compose around
-//   - Invocation     - per-call context passed to handlers (Cmd view + DeniedByPolicy / StrictMode / Identity)
+//   - Invocation     - per-call context passed to handlers (Cmd view + DeniedByPolicy / DenialLayer / DenialPolicySource)
 //   - AbortError     - structured short-circuit error from a Wrapper; framework namespaces HookName
 //
 // Policy surface (what Restrict contributes, also consumable from yaml policy):

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/larksuite/cli/internal/core"
 	"github.com/larksuite/cli/internal/hook"
 	internalplatform "github.com/larksuite/cli/internal/platform"
+	"github.com/larksuite/cli/internal/vfs"
 )
 
 // userPolicyFileName is the conventional filename for the user-layer Rule.
@@ -145,14 +147,13 @@ func wireHooks(ctx context.Context, rootCmd *cobra.Command, reg *hook.Registry) 
 	return hook.Emit(ctx, reg, platform.Startup, nil)
 }
 
-// cobraCommandViewSource is the default CommandViewSource: it builds a
-// CommandView directly from a *cobra.Command on demand. A future PR
-// will snapshot views at registration time so the view survives
-// strict-mode's RemoveCommand+AddCommand replacement of the
-// underlying *cobra.Command pointer. For now this is acceptable
-// because user-layer cmdpolicy preserves the pointer (only strict-mode
-// swaps it), and strict-mode-pruned commands are already unreachable
-// by the hook chain.
+// cobraCommandViewSource is the default CommandViewSource: it returns a
+// live view over the *cobra.Command. Strict-mode's Remove+Add stub
+// (cmd/prune.go::strictModeStubFrom) explicitly forwards the original
+// annotations + Short/Long so the live view keeps reporting Risk /
+// Identities / Domain through the replacement. User-layer policy
+// (cmdpolicy/apply.go::installDenyStub) mutates in place, preserving
+// metadata trivially.
 type cobraCommandViewSource struct{}
 
 func (cobraCommandViewSource) View(cmd *cobra.Command) platform.CommandView {
@@ -254,9 +255,20 @@ func userPolicyPath() (string, error) {
 // without policy enforcement so the user can fix the typo. Plugin-supplied
 // rules are fail-CLOSED instead because integrators take a code-level
 // responsibility for them.
+//
+// Wrapped errors may carry the absolute policy path (os.PathError); fold
+// the home prefix to "~" before emitting so stderr piped into agents /
+// CI logs does not leak the user's home directory.
 func warnPolicyError(errOut io.Writer, err error) {
 	if err == nil {
 		return
 	}
-	fmt.Fprintf(errOut, "warning: user policy not applied: %v\n", err)
+	fmt.Fprintf(errOut, "warning: user policy not applied: %s\n", redactHome(err.Error()))
+}
+
+func redactHome(s string) string {
+	if home, err := vfs.UserHomeDir(); err == nil && home != "" {
+		s = strings.ReplaceAll(s, home, "~")
+	}
+	return s
 }
