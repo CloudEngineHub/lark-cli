@@ -19,7 +19,7 @@ build: fetch_meta
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 vet: fetch_meta
-	go vet -tags testing ./...
+	go vet ./...
 
 # fmt-check fails when any file would be reformatted by gofmt. Keep this
 # in sync with the fast-gate "Check formatting" step in CI.
@@ -32,12 +32,9 @@ fmt-check:
 		exit 1; \
 	fi
 
-# unit-test passes -tags testing because public-SDK packages gate test-only
-# helpers (e.g. platform.ResetForTesting) behind //go:build testing. The
-# ./extension/... package list keeps the public plugin SDK in the default
-# test matrix.
+# ./extension/... keeps the public plugin SDK in the default test matrix.
 unit-test: fetch_meta
-	go test -tags testing -race -gcflags="all=-N -l" -count=1 \
+	go test -race -gcflags="all=-N -l" -count=1 \
 		./cmd/... ./internal/... ./shortcuts/... ./extension/...
 
 # examples-build keeps the shipped plugin-SDK examples compilable. If this

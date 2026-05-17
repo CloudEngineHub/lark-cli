@@ -30,7 +30,7 @@ jobs:
       - name: Build
         run: go build ./...
       - name: Vet
-        run: go vet -tags testing ./...
+        run: go vet ./...
       - name: Check formatting
         run: |
           unformatted=$(gofmt -l .)
@@ -63,7 +63,7 @@ jobs:
       - name: Fetch meta data
         run: python3 scripts/fetch_meta.py
       - name: Run tests
-        run: go test -tags testing -v -race -count=1 -timeout=5m ./cmd/... ./internal/... ./shortcuts/... ./extension/...
+        run: go test -v -race -count=1 -timeout=5m ./cmd/... ./internal/... ./shortcuts/... ./extension/...
 
   lint:
     needs: fast-gate
@@ -81,7 +81,7 @@ jobs:
       - name: Fetch meta data
         run: python3 scripts/fetch_meta.py
       - name: Run golangci-lint
-        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6 run --build-tags=testing --new-from-rev=origin/main
+        run: go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6 run --new-from-rev=origin/main
 
   coverage:
     needs: fast-gate
@@ -99,7 +99,7 @@ jobs:
       - name: Run tests with coverage
         run: |
           packages=$(go list ./... | grep -v '^github.com/larksuite/cli/tests/cli_e2e$' | grep -v '^github.com/larksuite/cli/tests/cli_e2e/')
-          go test -tags testing -race -coverprofile=coverage.txt -covermode=atomic $packages
+          go test -race -coverprofile=coverage.txt -covermode=atomic $packages
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@3f20e214133d0983f9a10f3d63b0faf9241a3daa # v6
         with:
@@ -153,14 +153,14 @@ jobs:
         run: |
           # Analyze current HEAD (strip line:col for stable diff across line shifts)
           # Filter "go: downloading ..." lines to avoid false diffs from module cache state
-          go run golang.org/x/tools/cmd/deadcode@v0.31.0 -tags=testing -test ./... 2>&1 | \
+          go run golang.org/x/tools/cmd/deadcode@v0.31.0 -test ./... 2>&1 | \
             grep -v '^go: ' | \
             sed 's/:[0-9][0-9]*:[0-9][0-9]*:/:/' | sort > /tmp/dc-head.txt
 
           # Analyze base branch via worktree
           git worktree add -q /tmp/dc-base "origin/${{ github.base_ref }}"
           (cd /tmp/dc-base && python3 scripts/fetch_meta.py && \
-           go run golang.org/x/tools/cmd/deadcode@v0.31.0 -tags=testing -test ./... 2>&1 | \
+           go run golang.org/x/tools/cmd/deadcode@v0.31.0 -test ./... 2>&1 | \
             grep -v '^go: ' | \
             sed 's/:[0-9][0-9]*:[0-9][0-9]*:/:/' | sort > /tmp/dc-base.txt) || {
             echo "::warning::Failed to analyze base branch — skipping incremental dead code check"
