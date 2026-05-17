@@ -332,9 +332,9 @@ func TestEvaluate_reasonCarriesAttemptAndConstraint(t *testing.T) {
 	root := buildTree()
 
 	cases := []struct {
-		name        string
-		rule        *platform.Rule
-		path        string
+		name         string
+		rule         *platform.Rule
+		path         string
 		wantInReason []string
 	}{
 		{
