@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/larksuite/cli/internal/i18n"
 	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/output"
 	"github.com/larksuite/cli/internal/validate"
@@ -41,7 +42,7 @@ type AppConfig struct {
 	AppId      string      `json:"appId"`
 	AppSecret  SecretInput `json:"appSecret"`
 	Brand      LarkBrand   `json:"brand"`
-	Lang       string      `json:"lang,omitempty"`
+	Lang       i18n.Lang   `json:"lang,omitempty"`
 	DefaultAs  Identity    `json:"defaultAs,omitempty"` // AsUser | AsBot | AsAuto
 	StrictMode *StrictMode `json:"strictMode,omitempty"`
 	Users      []AppUser   `json:"users"`
@@ -159,6 +160,7 @@ type CliConfig struct {
 	DefaultAs           Identity // AsUser | AsBot | AsAuto | "" (from config file)
 	UserOpenId          string
 	UserName            string
+	Lang                i18n.Lang
 	SupportedIdentities uint8 `json:"-"` // bitflag: 1=user, 2=bot; set by credential provider
 }
 
@@ -264,6 +266,7 @@ func ResolveConfigFromMulti(raw *MultiAppConfig, kc keychain.KeychainAccess, pro
 		AppSecret:   secret,
 		Brand:       app.Brand,
 		DefaultAs:   app.DefaultAs,
+		Lang:        app.Lang,
 	}
 	if len(app.Users) > 0 {
 		cfg.UserOpenId = app.Users[0].UserOpenId

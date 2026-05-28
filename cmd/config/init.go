@@ -18,6 +18,7 @@ import (
 	"github.com/larksuite/cli/internal/auth"
 	"github.com/larksuite/cli/internal/cmdutil"
 	"github.com/larksuite/cli/internal/core"
+	"github.com/larksuite/cli/internal/i18n"
 	"github.com/larksuite/cli/internal/keychain"
 	"github.com/larksuite/cli/internal/output"
 )
@@ -31,9 +32,13 @@ type ConfigInitOptions struct {
 	AppSecretStdin bool   // read app-secret from stdin (avoids process list exposure)
 	Brand          string
 	New            bool
-	Lang           string
-	langExplicit   bool   // true when --lang was explicitly passed
-	ProfileName    string // when set, create/update a named profile instead of replacing Apps[0]
+
+	Lang         string // raw --lang (string for cobra); normalized to canonical/"" in validateInitLang
+	langExplicit bool   // true when --lang was explicitly passed
+
+	UILang i18n.Lang // TUI display language (picker-only); intentionally separate from --lang
+
+	ProfileName string // when set, create/update a named profile instead of replacing Apps[0]
 
 	// ForceInit overrides the agent-workspace guard. Without it, running
 	// init under OPENCLAW_HOME / HERMES_HOME refuses and points the caller
@@ -45,7 +50,7 @@ type ConfigInitOptions struct {
 
 // NewCmdConfigInit creates the config init subcommand.
 func NewCmdConfigInit(f *cmdutil.Factory, runF func(*ConfigInitOptions) error) *cobra.Command {
-	opts := &ConfigInitOptions{Factory: f}
+	opts := &ConfigInitOptions{Factory: f, UILang: i18n.LangZhCN}
 
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -63,6 +68,9 @@ if the user explicitly wants a separate app inside the Agent workspace.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.Ctx = cmd.Context()
 			opts.langExplicit = cmd.Flags().Changed("lang")
+			if err := validateInitLang(opts); err != nil {
+				return err
+			}
 			if err := guardAgentWorkspace(opts); err != nil {
 				return err
 			}
@@ -77,12 +85,31 @@ if the user explicitly wants a separate app inside the Agent workspace.`,
 	cmd.Flags().StringVar(&opts.AppID, "app-id", "", "App ID (non-interactive)")
 	cmd.Flags().BoolVar(&opts.AppSecretStdin, "app-secret-stdin", false, "Read App Secret from stdin to avoid process list exposure")
 	cmd.Flags().StringVar(&opts.Brand, "brand", "feishu", "feishu or lark (non-interactive, default feishu)")
-	cmd.Flags().StringVar(&opts.Lang, "lang", "zh", "language for interactive prompts (zh or en)")
+	cmd.Flags().StringVar(&opts.Lang, "lang", "", "language preference (e.g. zh or zh_cn)")
 	cmd.Flags().StringVar(&opts.ProfileName, "name", "", "create or update a named profile (append instead of replace)")
 	cmd.Flags().BoolVar(&opts.ForceInit, "force-init", false, "allow init inside an Agent workspace (OPENCLAW_HOME / HERMES_HOME); use config bind instead unless you really want a separate app")
 	cmdutil.SetRisk(cmd, "write")
 
 	return cmd
+}
+
+// printLangPreferenceConfirmation echoes the set preference to stderr, only
+// when --lang explicitly set a non-empty value.
+func printLangPreferenceConfirmation(opts *ConfigInitOptions) {
+	if !opts.langExplicit || opts.Lang == "" {
+		return
+	}
+	msg := getInitMsg(opts.UILang)
+	fmt.Fprintln(opts.Factory.IOStreams.ErrOut, fmt.Sprintf(msg.LangPreferenceSet, opts.Lang))
+}
+
+func validateInitLang(opts *ConfigInitOptions) error {
+	lang, err := cmdutil.ParseLangFlag(opts.Lang)
+	if err != nil {
+		return err
+	}
+	opts.Lang = string(lang)
+	return nil
 }
 
 // guardAgentWorkspace refuses 'config init' when run inside an OpenClaw or
@@ -132,7 +159,7 @@ func cleanupOldConfig(existing *core.MultiAppConfig, f *cmdutil.Factory, skipApp
 func saveAsOnlyApp(appId string, secret core.SecretInput, brand core.LarkBrand, lang string) error {
 	config := &core.MultiAppConfig{
 		Apps: []core.AppConfig{{
-			AppId: appId, AppSecret: secret, Brand: brand, Lang: lang, Users: []core.AppUser{},
+			AppId: appId, AppSecret: secret, Brand: brand, Lang: i18n.Lang(lang), Users: []core.AppUser{},
 		}},
 	}
 	return core.SaveMultiAppConfig(config)
@@ -146,7 +173,13 @@ func saveInitConfig(profileName string, existing *core.MultiAppConfig, f *cmduti
 		return saveAsProfile(existing, f.Keychain, profileName, appId, secret, brand, lang)
 	}
 	cleanupOldConfig(existing, f, appId)
-	return saveAsOnlyApp(appId, secret, brand, lang)
+	var prior i18n.Lang
+	if existing != nil {
+		if app := existing.CurrentAppConfig(""); app != nil {
+			prior = app.Lang
+		}
+	}
+	return saveAsOnlyApp(appId, secret, brand, string(preferredLang(i18n.Lang(lang), prior)))
 }
 
 // saveAsProfile appends or updates a named profile in the config.
@@ -167,11 +200,10 @@ func saveAsProfile(existing *core.MultiAppConfig, kc keychain.KeychainAccess, pr
 			}
 			multi.Apps[idx].Users = []core.AppUser{}
 		}
-		// Update existing profile
 		multi.Apps[idx].AppId = appId
 		multi.Apps[idx].AppSecret = secret
 		multi.Apps[idx].Brand = brand
-		multi.Apps[idx].Lang = lang
+		multi.Apps[idx].Lang = preferredLang(i18n.Lang(lang), multi.Apps[idx].Lang)
 	} else {
 		if findAppIndexByAppID(multi, profileName) >= 0 {
 			return fmt.Errorf("profile name %q conflicts with existing appId", profileName)
@@ -182,7 +214,7 @@ func saveAsProfile(existing *core.MultiAppConfig, kc keychain.KeychainAccess, pr
 			AppId:     appId,
 			AppSecret: secret,
 			Brand:     brand,
-			Lang:      lang,
+			Lang:      i18n.Lang(lang),
 			Users:     []core.AppUser{},
 		})
 	}
@@ -238,7 +270,7 @@ func updateExistingProfileWithoutSecret(existing *core.MultiAppConfig, profileNa
 
 	app.AppId = appID
 	app.Brand = brand
-	app.Lang = lang
+	app.Lang = preferredLang(i18n.Lang(lang), app.Lang)
 	return core.SaveMultiAppConfig(existing)
 }
 
@@ -283,29 +315,27 @@ func configInitRun(opts *ConfigInitOptions) error {
 			return output.Errorf(output.ExitInternal, "internal", "failed to save config: %v", err)
 		}
 		output.PrintSuccess(f.IOStreams.ErrOut, fmt.Sprintf("Configuration saved to %s", core.GetConfigPath()))
+		printLangPreferenceConfirmation(opts)
 		output.PrintJson(f.IOStreams.Out, map[string]interface{}{"appId": opts.AppID, "appSecret": "****", "brand": brand})
 		return nil
 	}
 
-	// For interactive modes, prompt language selection if --lang was not explicitly set
+	// For interactive modes, prompt language selection if --lang was not explicitly set.
+	// Picker offers 2 options (中文 / English) and drives BOTH opts.Lang
+	// (preference) and opts.UILang (TUI rendering).
 	if f.IOStreams.IsTerminal && !opts.langExplicit && !opts.hasAnyNonInteractiveFlag() {
-		savedLang := ""
-		if existing != nil {
-			if app := existing.CurrentAppConfig(""); app != nil {
-				savedLang = app.Lang
-			}
-		}
-		lang, err := promptLangSelection(savedLang)
+		lang, err := promptLangSelection()
 		if err != nil {
 			if err == huh.ErrUserAborted {
 				return output.ErrBare(1)
 			}
-			return err
+			return output.Errorf(output.ExitInternal, "internal", "language selection failed: %v", err)
 		}
-		opts.Lang = lang
+		opts.Lang = string(lang)
+		opts.UILang = lang
 	}
 
-	msg := getInitMsg(opts.Lang)
+	msg := getInitMsg(opts.UILang)
 
 	// Mode 3: Create new app directly (--new)
 	if opts.New {
@@ -324,6 +354,7 @@ func configInitRun(opts *ConfigInitOptions) error {
 		if err := saveInitConfig(opts.ProfileName, existing, f, result.AppID, secret, result.Brand, opts.Lang); err != nil {
 			return output.Errorf(output.ExitInternal, "internal", "failed to save config: %v", err)
 		}
+		printLangPreferenceConfirmation(opts)
 		output.PrintJson(f.IOStreams.Out, map[string]interface{}{"appId": result.AppID, "appSecret": "****", "brand": result.Brand})
 		return nil
 	}
@@ -366,6 +397,7 @@ func configInitRun(opts *ConfigInitOptions) error {
 		if result.Mode == "existing" {
 			output.PrintSuccess(f.IOStreams.ErrOut, fmt.Sprintf(msg.ConfigSaved, result.AppID))
 		}
+		printLangPreferenceConfirmation(opts)
 		return nil
 	}
 
@@ -452,5 +484,6 @@ func configInitRun(opts *ConfigInitOptions) error {
 		return output.Errorf(output.ExitInternal, "internal", "failed to save config: %v", err)
 	}
 	output.PrintSuccess(f.IOStreams.ErrOut, fmt.Sprintf("Configuration saved to %s", core.GetConfigPath()))
+	printLangPreferenceConfirmation(opts)
 	return nil
 }
