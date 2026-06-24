@@ -61,6 +61,10 @@ The four message-pulling shortcuts (`+messages-mget`, `+chat-messages-list`, `+m
 
 Card messages (`interactive` type) are not yet supported for compact conversion in event subscriptions. The raw event data will be returned instead, with a hint printed to stderr.
 
+### Audio Messages
+
+`--audio` sends a voice message and supports only Opus audio files, for example `.opus` files or Ogg Opus (`.ogg`) files. For `mp3`, `wav`, or other non-Opus audio, either convert to `.opus` first and keep using `--audio`, or send the original file as an attachment with `--file`.
+
 ### Flag Types
 
 Flags support two layers:
