@@ -21,10 +21,10 @@ import (
 //   - 5 session（create/list/get/stop/chat）+ 1 session-messages-list
 //   - 8 openapi-key（list/get/create/update/enable/disable/delete/reset）
 //   - 3 plugin（install/uninstall/list）= 63。
-func TestAppsShortcuts_Returns63(t *testing.T) {
+func TestAppsShortcuts_Returns64(t *testing.T) {
 	got := Shortcuts()
-	if len(got) != 63 {
-		t.Fatalf("Shortcuts() returned %d entries, want 63", len(got))
+	if len(got) != 64 {
+		t.Fatalf("Shortcuts() returned %d entries, want 64", len(got))
 	}
 }
 
