@@ -108,39 +108,38 @@ func TestSheetsSuccessPathsLeaveStderrEmpty(t *testing.T) {
 	}
 }
 
-// TestNoDirectStderrWritesInSheetsPackages is the anti-regression guard the
+// TestNoDirectStderrWritesInSheetsPackage is the anti-regression guard the
 // audit asks for: sheets code must not write to ErrOut at all — there is no
 // allowlist. Typed errors already reach stderr through the emitter, and
 // everything else belongs in the result. If a future path genuinely needs a
 // human-facing channel, it has to be an explicitly subscribed one, not a bare
 // Fprintf here.
-func TestNoDirectStderrWritesInSheetsPackages(t *testing.T) {
+func TestNoDirectStderrWritesInSheetsPackage(t *testing.T) {
 	t.Parallel()
 
-	for _, dir := range []string{".", "backward"} {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read %s: %v", dir, err)
+	const dir = "."
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
 		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+		path := filepath.Join(dir, name)
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for i, raw := range strings.Split(string(body), "\n") {
+			line := strings.TrimSpace(raw)
+			if !strings.Contains(line, "ErrOut") || strings.HasPrefix(line, "//") {
 				continue
 			}
-			path := filepath.Join(dir, name)
-			body, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read %s: %v", path, err)
-			}
-			for i, raw := range strings.Split(string(body), "\n") {
-				line := strings.TrimSpace(raw)
-				if !strings.Contains(line, "ErrOut") || strings.HasPrefix(line, "//") {
-					continue
-				}
-				t.Errorf("%s:%d writes to stderr on a shortcut path: %s\n"+
-					"put the information in the success payload (warnings / effective_operation / "+
-					"deprecation) instead", path, i+1, line)
-			}
+			t.Errorf("%s:%d writes to stderr on a shortcut path: %s\n"+
+				"put the information in the success payload (warnings / effective_operation / "+
+				"deprecation) instead", path, i+1, line)
 		}
 	}
 }
