@@ -177,9 +177,12 @@ func (p *DefaultTokenProvider) doResolveTAT(ctx context.Context) (*TokenResult, 
 	if err != nil {
 		return nil, err
 	}
-	token, err := FetchTAT(ctx, httpClient, acct.Brand, acct.AppID, acct.AppSecret)
+	result, err := FetchTAT(ctx, httpClient, acct.Brand, acct.AppID, acct.AppSecret)
 	if err != nil {
 		return nil, err
 	}
-	return &TokenResult{Token: token}, nil
+	if result.StatusMessage != "" && p.errOut != nil {
+		fmt.Fprintf(p.errOut, "[lark-cli] tat-client: %s\n", result.StatusMessage)
+	}
+	return &TokenResult{Token: result.AccessToken}, nil
 }

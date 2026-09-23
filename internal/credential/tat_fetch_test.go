@@ -47,18 +47,19 @@ func (s *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func TestFetchTAT_Success(t *testing.T) {
+	const statusMessage = "Some scopes were silently trimmed"
 	rt := &stubRoundTripper{
 		respCode: 200,
-		respBody: `{"code":0,"access_token":"t-abc","token_type":"Bearer","expires_in":7200}`,
+		respBody: `{"code":0,"access_token":"t-abc","token_type":"Bearer","expires_in":7200,"status_message":"Some scopes were silently trimmed"}`,
 	}
 	hc := &http.Client{Transport: rt}
 
-	token, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
+	result, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if token != "t-abc" {
-		t.Errorf("token = %q, want t-abc", token)
+	if result.AccessToken != "t-abc" || result.StatusMessage != statusMessage {
+		t.Errorf("result = (%q, %q), want token and status message", result.AccessToken, result.StatusMessage)
 	}
 	if rt.gotReq.URL.String() != "https://accounts.feishu.cn/oauth/v3/token" {
 		t.Errorf("url = %s", rt.gotReq.URL.String())
@@ -84,12 +85,12 @@ func TestFetchTAT_InvalidClient_ConfigInvalidClient(t *testing.T) {
 	rt := &stubRoundTripper{respCode: 400, respBody: `{"error":"invalid_client","error_description":"The client secret is invalid.","code":20002}`}
 	hc := &http.Client{Transport: rt}
 
-	token, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
+	result, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
 	if err == nil {
 		t.Fatal("expected error for invalid_client")
 	}
-	if token != "" {
-		t.Errorf("token = %q, want empty", token)
+	if result.AccessToken != "" {
+		t.Errorf("token = %q, want empty", result.AccessToken)
 	}
 	var cfgErr *errs.ConfigError
 	if !errors.As(err, &cfgErr) {
@@ -132,12 +133,12 @@ func TestFetchTAT_OtherClientError_CodeZero_Typed(t *testing.T) {
 	rt := &stubRoundTripper{respCode: 400, respBody: `{"error":"invalid_scope","error_description":"the requested scope is not granted"}`}
 	hc := &http.Client{Transport: rt}
 
-	tok, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
+	result, err := FetchTAT(context.Background(), hc, core.BrandFeishu, "cli_app", "secret_x")
 	if err == nil {
 		t.Fatal("expected non-nil error for code-0 invalid_scope (must not return empty token + nil error)")
 	}
-	if tok != "" {
-		t.Errorf("token = %q, want empty", tok)
+	if result.AccessToken != "" {
+		t.Errorf("token = %q, want empty", result.AccessToken)
 	}
 	if !errs.IsTyped(err) {
 		t.Fatalf("expected a typed errs.* error, got %T %v", err, err)
