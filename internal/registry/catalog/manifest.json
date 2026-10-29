@@ -88,9 +88,9 @@
     {
       "name": "task",
       "file": "services/task.json",
-      "revision": 15,
-      "size": 455002,
-      "sha256": "8a67a1c1819e51c9c335ebcf0c8399563b3f1465f96093bb0294e559744ae28e"
+      "revision": 16,
+      "size": 477483,
+      "sha256": "66d8e4de6a4da9b6a82fa074ae89ab948c1f4b0105a9aa43f06e70731e73ed43"
     },
     {
       "name": "vc",
